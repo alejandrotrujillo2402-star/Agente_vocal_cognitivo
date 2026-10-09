@@ -66,7 +66,7 @@ def inicio():
 
 
 @app.get("/health")
-def health():
+async def health():
     return {"ok": True, "llm": bool(llm.CLAVE), "modelo": llm.MODELO, "modelo_rapido": llm.MODELO_RAPIDO,
             "respaldos": llm.RESPALDOS, "stt": bool(DEEPGRAM), "tts": bool(DEEPGRAM), "stt_modelo": STT["modelo"],
             "stt_idioma": STT["idioma"], "stt_terminos": STT["terminos"], "stt_error": STT["error"] or None, "voz": TTS_VOZ, "datos": datos_ips.estado()}
@@ -243,7 +243,7 @@ def para_voz(texto):
 AUDIO_CORTO: "OrderedDict[tuple, bytes]" = OrderedDict()  # saludo, rellenos y respuestas sociales: sin red
 URL_TTS = "https://api.deepgram.com/v1/speak"
 # Deben coincidir con SALUDO_INICIAL y RELLENOS de static/index.html
-FRASES_FRECUENTES = ["Hola, ¿en qué puedo ayudarte?", "Déjame revisar.", "Un momento, lo consulto.", "Con gusto."]
+FRASES_FRECUENTES = ["Hola, ¿en qué puedo ayudarte?", "Claro, un momento.", "Con gusto."]
 
 
 async def precargar_voz():
@@ -314,7 +314,7 @@ async def tts(texto: str, voz: str = ""):
 
 PARAMS_STT = {"smart_format": "true", "punctuate": "true", "numerals": "true", "diarize": "true",
               "interim_results": "true", "filler_words": "false", "vad_events": "true",
-              "endpointing": "300", "utterance_end_ms": "1000"}
+              "endpointing": "300", "utterance_end_ms": "1000"}  # endpointing 250–400 ms; utterance_end solo de respaldo (mínimo 1000)
 # Se prueba en orden; si Deepgram rechaza una combinación se pasa a la siguiente
 COMBINACIONES = [("nova-3", "es-419"), ("nova-2", "es-419"), ("nova-2", "es")]
 URL_LISTEN = "https://api.deepgram.com/v1/listen"

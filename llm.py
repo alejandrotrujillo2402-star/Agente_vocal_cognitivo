@@ -30,10 +30,12 @@ async def calentar():
     """Llamada mínima para abrir la conexión con el proveedor antes de la primera pregunta real."""
     if not CLAVE:
         return
-    try:
-        await cliente.chat.completions.create(model=MODELO, messages=[{"role": "user", "content": "ok"}], max_tokens=1)
-    except Exception as e:  # aunque el proveedor la rechace, la conexión ya quedó abierta
-        print("Calentamiento del LLM:", str(e)[:120])
+    for modelo in dict.fromkeys([MODELO, MODELO_RAPIDO]):
+        try:
+            await cliente.chat.completions.create(model=modelo, messages=[{"role": "user", "content": "ok"}],
+                                                  max_tokens=1, **_extra(modelo))
+        except Exception as e:  # aunque el proveedor la rechace, la conexión ya quedó abierta
+            print("Calentamiento del LLM:", modelo, str(e)[:120])
 
 
 def _espera(e):
@@ -84,7 +86,7 @@ async def json_rapido(messages, modelo=None):
 
 async def stream(messages, tools=None, modelo=None):
     """Genera eventos: ("texto", fragmento) o ("tools", [llamadas completas])."""
-    kw = {"messages": messages, "temperature": 0.2, "stream": True}
+    kw = {"messages": messages, "temperature": 0.2, "stream": True, "max_tokens": 220}
     if tools:
         kw["tools"] = tools
     respuesta = await _crear(modelo or MODELO, **kw)
