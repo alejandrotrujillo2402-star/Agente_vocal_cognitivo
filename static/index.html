@@ -174,10 +174,17 @@ select:focus,.campo:focus{border-color:var(--acc)}
   <section class="col">
     <div class="card">
       <h2><span>1 · Fuente de conocimiento</span><span class="chip" id="chipFuente" style="text-transform:none;letter-spacing:0"><i></i>cargando</span></h2>
-      <div class="doc-nombre">IPS públicas y privadas según nivel de atención y capacidad instalada</div>
-      <div class="doc-tipo" style="text-transform:none">API datos.gov.co · s2ru-bqt6</div>
+      <div class="doc-nombre" id="fuenteNombre">IPS públicas y privadas según nivel de atención y capacidad instalada</div>
+      <div class="doc-tipo" id="fuenteTipo" style="text-transform:none">API datos.gov.co · s2ru-bqt6</div>
       <div class="stats" id="docStats"></div>
       <div class="aviso" id="avisoDoc"><div class="spin"></div><span>Conectando con datos.gov.co…</span></div>
+      <input type="file" id="archivo" accept=".csv,.xlsx,.json,.pdf,.docx,.pptx,.txt" hidden>
+      <button class="btn full" id="btnArchivo" title="CSV, XLSX, JSON, PDF, DOCX, PPTX o TXT · máximo 25 MB">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>Cargar archivo del jurado
+      </button>
+      <button class="btn full" id="btnApi" style="display:none">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>Volver a la API de datos.gov.co
+      </button>
     </div>
 
     <div class="card" id="cardBrief">
@@ -207,12 +214,14 @@ select:focus,.campo:focus{border-color:var(--acc)}
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Transcripción
             </button>
             <label class="toggle"><input type="checkbox" id="interrupciones" checked>Permitir interrupciones</label>
+            <label class="toggle" title="Con audífonos el micrófono no oye al agente: cualquier voz puede interrumpirlo"><input type="checkbox" id="audifonos">Uso audífonos</label>
           </div>
+          <div class="aviso err" id="avisoVoz" style="display:none"></div>
         </div>
       </div>
       <div class="metricas">
-        <span>Latencia última respuesta: <b id="mLat">—</b></span>
-        <span>Promedio: <b id="mLatProm">—</b></span>
+        <span>Latencia: <b id="mLat">fin de turno → primer token — → primer audio —</b></span>
+        <span>Promedio primer audio: <b id="mLatProm">—</b></span>
         <span>Hablantes detectados: <b id="mHab">0</b></span>
         <span>Intervenciones: <b id="mInt">0</b></span>
       </div>
@@ -271,12 +280,30 @@ const COLORES = ["var(--h1)","var(--h2)","var(--h3)","var(--h4)"];
 const HEX = {"var(--h1)":"#2563eb","var(--h2)":"#c2410c","var(--h3)":"#7c3aed","var(--h4)":"#be185d","var(--ag)":"#0f766e"};
 const DEPTOS = ["Amazonas","Antioquia","Arauca","Atlántico","Bogotá D.C","Bolívar","Boyacá","Caldas","Caquetá","Casanare","Cauca","Cesar","Chocó","Córdoba","Cundinamarca","Guainía","Guaviare","Huila","La Guajira","Magdalena","Meta","Nariño","Norte de Santander","Putumayo","Quindío","Risaralda","San Andrés","Santander","Sucre","Tolima","Valle del Cauca","Vaupés","Vichada"];
 
+const SALUDO_INICIAL = "Hola, ¿en qué puedo ayudarte?";
+const RELLENOS = ["Déjame revisar.", "Un momento, lo consulto."];
+const ECO_MS = 800;   // semidúplex: lo que llega mientras el agente habla y 800 ms después no cuenta
+const ECO_AUDIO_MS = 300;   // margen sobre la marca de tiempo de cada palabra (eco tardío de Deepgram)
+// Se comparan sin tildes (sinTildes)
+const RE_SILENCIO = /\b(callate|callado|callada|silencio|para ya|detente|deja de hablar|no hables|espera|stop|shh)\b/;
+const RE_SOCIAL = /\b(hola|holi|buenas|buen dia|buenos dias|que tal|como estas|como esta|como te va|gracias|adios|chao|chau|hasta luego|hasta pronto|nos vemos)\b/;
+const RE_SALUDO = /\b(hola|holi|buenas|buen dia|buenos dias)\b/;
+const RE_PIDE = /\b(dime|dame|cuentame|muestrame|busca|consulta|compara|explicame|repite|repiteme|sigue|continua|necesito|quiero saber)\b/;
+// Con tildes: "qué" interroga, "que" no
+const RE_INTERROG = /(^|[^\p{L}])(qué|cuánt[oa]s?|cuál(es)?|dónde|cómo|quién(es)?|cuándo)(?![\p{L}])/iu;
+
 const S = {
   sesion: (() => { try { let s = sessionStorage.getItem("sid"); if (!s) { s = crypto.randomUUID(); sessionStorage.setItem("sid", s); } return s; } catch { return crypto.randomUUID(); } })(),
-  salud: {}, doc: null, conversando: false, ws: null, rec: null, stream: null, reco: null,
-  inicio: 0, offset: 0, turno: [], hablantes: {}, historial: [], analisis: [], lineas: [],
-  hablando: false, pensando: false, textoHablado: "", cola: [], actual: null, abort: null,
-  finVoz: 0, ecoTexto: "", ecoHasta: 0, latencias: [], interim: null, lineaAgente: null, keep: null, nivel: null,
+  salud: {}, doc: null, conversando: false, ws: null, rec: null, stream: null, reco: null, keep: null, nivel: null,
+  inicio: 0, offset: 0, hablantes: {}, historial: [], analisis: [], lineas: [], interim: null, lineaAgente: null,
+  // turno del usuario
+  turno: [], interimTxt: "", interimQuien: 0, tFin: null, cierreEn: 0, ultimaVoz: 0, finPalabra: 0, recInicio: 0,
+  turnoEnviado: null, pausa: false, esperaRespuesta: false,
+  // voz del agente
+  hablando: false, pensando: false, sonoRespuesta: false, vozNav: false, textoHablado: "", cola: [], actual: null, abort: null,
+  tramos: [], ecoTexto: "", ecoHasta: 0, ecoSuave: 0, rellenos: null, nRelleno: 0, latencias: [],
+  // Deepgram
+  dgFallo: "", avisoDG: "", wsFallos: 0,
 };
 
 /* ---------- utilidades ---------- */
@@ -286,23 +313,29 @@ function reloj() { const s = S.inicio ? Math.max(0, (performance.now() - S.inici
 function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
 function norm(t) { return t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ñ ]/g, " ").split(/\s+/).filter(w => w.length > 2); }
 function esc(t) { return String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function sinTildes(t) { return String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+function palabras(t) { return String(t || "").split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length; }
+function conContenido(t) { return /[\p{L}\p{N}]/u.test(t || ""); }
+function esPregunta(t) { return t.includes("?") || RE_INTERROG.test(t); }
 
 function estado(modo, sub) {
-  const o = $("orbe"); o.className = "orbe " + modo;
-  const t = {inactivo:"Listo para conversar", escuchando:"Escuchando", pensando:"Pensando", hablando:"Hablando"}[modo];
+  const o = $("orbe"); o.className = "orbe " + (modo === "pausa" ? "inactivo" : modo);
+  const t = {inactivo:"Listo para conversar", escuchando:"Escuchando", pensando:"Pensando", hablando:"Hablando", pausa:"En pausa"}[modo];
   $("estado").textContent = t;
   if (sub !== undefined) $("estadoSub").textContent = sub;
   else $("estadoSub").textContent = {inactivo: S.doc ? "Pulsa Iniciar conversación y habla con naturalidad." : "Cargando datos de datos.gov.co…",
-    escuchando:"Haz tu pregunta en voz alta. Puedes interrumpir al agente cuando quieras.",
+    escuchando: duplex() ? "Haz tu pregunta en voz alta. Puedes interrumpir al agente cuando quieras."
+                         : "Haz tu pregunta en voz alta. Para interrumpir al agente, di «cállate» o «espera».",
+    pausa:"Haz una pregunta para continuar.",
     pensando:"Buscando en el documento…", hablando:"Respondiendo con base en el documento."}[modo];
 }
-function estadoReposo() { if (S.hablando || S.pensando) return; estado(S.conversando ? "escuchando" : "inactivo"); }
+function estadoReposo() { if (S.hablando || S.pensando) return; estado(S.conversando ? (S.pausa ? "pausa" : "escuchando") : "inactivo"); }
 
 /* ---------- salud ---------- */
 async function cargarSalud() {
   try {
     S.salud = await (await fetch("/health")).json();
-    chip("chipStt", S.salud.stt ? "Voz: Deepgram (diarización)" : "Voz: navegador", S.salud.stt ? "ok" : "warn");
+    if (!S.dgFallo) chip("chipStt", S.salud.stt ? "Voz: Deepgram (diarización)" : "Voz: navegador", S.salud.stt ? "ok" : "warn");
     chip("chipLlm", S.salud.llm ? "Modelo: " + S.salud.modelo.split("/").pop() : "Modelo sin clave", S.salud.llm ? "ok" : "err");
   } catch { chip("chipLlm", "Servidor no disponible", "err"); }
 }
@@ -311,50 +344,121 @@ async function cargarSalud() {
 function avisoDoc(t, tipo) { $("avisoDoc").className = "aviso " + (tipo || ""); $("avisoDoc").innerHTML = (tipo === "carga" ? '<div class="spin"></div>' : "") + "<span>" + esc(t) + "</span>"; }
 const fmtN = n => Number(n || 0).toLocaleString("es-CO");
 
+/* La fuente es por sesión: la API, o el archivo que cargó esta sesión (tabla de IPS o documento). */
+const sesionQS = () => "sesion=" + encodeURIComponent(S.sesion);
+
 async function cargarFuente(intento = 0) {
+  clearTimeout(S.tFuente);
   let e = {};
-  try { e = await (await fetch("/api/estado")).json(); } catch {}
-  if (!e.filas) {
+  try { e = await (await fetch("/api/estado?" + sesionQS())).json(); } catch {}
+  if (!e.filas && e.tipo !== "documento") {
     avisoDoc(intento > 2 ? "Descargando las 41.000 filas de datos.gov.co (paginado)…" : "Conectando con datos.gov.co…", "carga");
-    return setTimeout(() => cargarFuente(intento + 1), 2000);
+    S.tFuente = setTimeout(() => cargarFuente(intento + 1), 2000);
+    return;
   }
-  const vivo = String(e.fuente).startsWith("api");
-  chip("chipFuente", vivo ? "API en vivo" : "Caché verificada", vivo ? "ok" : "warn");
-  $("docStats").innerHTML = [[fmtN(e.prestadores), "prestadores"], [fmtN(e.sedes), "sedes"], [fmtN(e.municipios), "municipios"]]
-    .map(([v, n]) => `<div class="stat"><b>${v}</b><small>${n}</small></div>`).join("");
-  avisoDoc(`${fmtN(e.filas)} registros · ${e.fecha_corte || ""} · actualizado ${e.actualizado || ""}`);
-  if (!vivo) setTimeout(() => cargarFuente(intento + 1), 15000);
+  pintarFuente(e);
   if (S.doc) return;
-  try {
-    const b = await (await fetch("/api/brief")).json();
-    S.doc = {brief: b};
-    $("brief").innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:6px">${esc(b.titulo)}</div>
-      <p class="resumen">${esc(b.resumen)}</p>
-      <div class="temas">${(b.temas || []).map(t => `<span class="tema">${esc(t)}</span>`).join("")}</div>
-      <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">PREGUNTAS SUGERIDAS</div>
-      <div class="sug">${(b.preguntas || []).map(p => `<button data-p="${esc(p)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>${esc(p)}</span></button>`).join("")}</div>`;
-    $("brief").querySelectorAll(".sug button").forEach(btn => btn.onclick = () => preguntarTexto(btn.dataset.p));
-    $("btnEscuchar").hidden = false;
-    chip("chipDoc", "Datos listos", "ok");
-    estadoReposo();
-  } catch {}
+  try { pintarBrief(await (await fetch("/api/brief?" + sesionQS())).json()); } catch {}
 }
 
-function presentar() {
-  S.presentado = true;
+function pintarFuente(e) {
+  const stat = (v, n) => `<div class="stat"><b>${esc(v)}</b><small>${n}</small></div>`;
+  const api = e.tipo === "api", doc = e.tipo === "documento";
+  $("btnApi").style.display = api ? "none" : "";
+  if (api) {
+    const vivo = String(e.fuente).startsWith("api");
+    chip("chipFuente", vivo ? "API en vivo" : "Caché verificada", vivo ? "ok" : "warn");
+    $("fuenteNombre").textContent = "IPS públicas y privadas según nivel de atención y capacidad instalada";
+    $("fuenteTipo").textContent = "API datos.gov.co · s2ru-bqt6";
+    if (!vivo) S.tFuente = setTimeout(cargarFuente, 15000);   // la caché se reemplaza cuando termina la descarga
+  } else {
+    chip("chipFuente", doc ? "Documento" : "Archivo", "ok");
+    $("fuenteNombre").textContent = e.archivo;
+    $("fuenteTipo").textContent = `Fuente: archivo ${e.archivo} · ` + (doc
+      ? [e.paginas ? fmtN(e.paginas) + " páginas" : "", fmtN(e.fragmentos) + " fragmentos"].filter(Boolean).join(" · ")
+      : fmtN(e.filas) + " registros");
+  }
+  if (doc) {
+    const filas = Object.values(e.tablas || {}).reduce((a, t) => a + t.filas, 0);
+    $("docStats").innerHTML = stat(e.formato, "formato") + (e.paginas ? stat(fmtN(e.paginas), "páginas") : filas ? stat(fmtN(filas), "filas") : "")
+      + stat(fmtN(e.fragmentos), "fragmentos");
+    avisoDoc(filas ? "Tabla indexada: búsqueda por fragmentos y cálculos exactos por columna."
+                   : "Indexado por fragmentos: el agente busca en el documento y cita la página.");
+  } else {
+    $("docStats").innerHTML = stat(fmtN(e.prestadores), "prestadores") + stat(fmtN(e.sedes), "sedes") + stat(fmtN(e.municipios), "municipios");
+    avisoDoc(api ? `${fmtN(e.filas)} registros · ${e.fecha_corte || ""} · actualizado ${e.actualizado || ""}`
+                 : `Mismas columnas que la API: las herramientas de IPS consultan este archivo. ${e.fecha_corte || ""}`);
+  }
+}
+
+function pintarBrief(b) {
+  S.doc = {brief: b};
+  $("brief").innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:6px">${esc(b.titulo)}</div>
+    <p class="resumen">${esc(b.resumen)}</p>
+    <div class="temas">${(b.temas || []).map(t => `<span class="tema">${esc(t)}</span>`).join("")}</div>
+    <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">PREGUNTAS SUGERIDAS</div>
+    <div class="sug">${(b.preguntas || []).map(p => `<button data-p="${esc(p)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>${esc(p)}</span></button>`).join("")}</div>`;
+  $("brief").querySelectorAll(".sug button").forEach(btn => btn.onclick = () => preguntarTexto(btn.dataset.p));
+  $("btnEscuchar").hidden = false;
+  chip("chipDoc", "Datos listos", "ok");
+  estadoReposo();
+}
+
+/* Archivo del jurado: tabla con columnas del dataset (reemplaza los datos) o documento (se indexa) */
+const ARCHIVO_EXT = [".csv", ".xlsx", ".json", ".pdf", ".docx", ".pptx", ".txt"], ARCHIVO_MAX = 25 * 1024 * 1024;
+
+function subirArchivo(f) {
+  if (!f) return;
+  const ext = (f.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  if (!ARCHIVO_EXT.includes(ext)) return avisoDoc("Formato no admitido. Usa CSV, XLSX, JSON, PDF, DOCX, PPTX o TXT.", "err");
+  if (f.size > ARCHIVO_MAX) return avisoDoc(`${f.name} pesa ${(f.size / 1048576).toFixed(1)} MB; el máximo es 25 MB.`, "err");
+  const fd = new FormData(); fd.append("sesion", S.sesion); fd.append("archivo", f);
+  return cambiarFuente(fetch("/api/documento", {method: "POST", body: fd}), `Procesando ${f.name}…`);
+}
+
+function volverApi() {
+  return cambiarFuente(fetch("/api/documento?" + sesionQS(), {method: "DELETE"}), "Volviendo a la API de datos.gov.co…");
+}
+
+async function cambiarFuente(peticion, mensaje) {
+  clearTimeout(S.tFuente);
+  $("btnArchivo").disabled = $("btnApi").disabled = true;
+  avisoDoc(mensaje, "carga");
+  try {
+    const r = await peticion, d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "No se pudo cambiar la fuente.");
+    interrumpir(true);
+    S.esperaRespuesta = false;
+    pintarFuente(d.estado);
+    pintarBrief(d.brief);
+    agregarLinea("sistema", d.estado.tipo === "api" ? "Fuente: API de datos.gov.co."
+      : `Fuente: archivo ${d.estado.archivo}. Las respuestas salen de ese archivo.`, {sistema: true});
+  } catch (e) { avisoDoc(e.message, "err"); }
+  finally { $("btnArchivo").disabled = $("btnApi").disabled = false; $("archivo").value = ""; }
+}
+
+/* El brief y las preguntas se ven en pantalla; solo el botón Escuchar lee el resumen en voz alta. */
+function leerBrief() {
   if (!S.doc) return;
-  const b = S.doc.brief;
-  const texto = b.presentacion_voz || b.resumen;
-  const l = agregarLinea("agente", texto, {canal: "brief"});
+  const texto = S.doc.brief.resumen;
   if (!S.inicio) S.inicio = performance.now();
-  hablar(texto, true);
-  analizar(l, "Agente", texto);
+  interrumpir(true);
+  agregarLinea("agente", texto, {canal: "brief"});
+  hablar(texto);
+}
+
+function saludar() {
+  interrumpir(true);
+  agregarLinea("agente", SALUDO_INICIAL, {canal: "saludo"});
+  S.esperaRespuesta = false;
+  hablar(SALUDO_INICIAL);
 }
 
 /* ---------- transcripción ---------- */
 function etiqueta(h) {
   if (h === "agente") return {nombre: "Agente", color: "var(--ag)"};
   if (h === "texto") return {nombre: "Usuario (escrito)", color: "#475569"};
+  if (h === "sistema") return {nombre: "Sistema", color: "var(--mute)"};
   if (!(h in S.hablantes)) { const n = Object.keys(S.hablantes).length; S.hablantes[h] = {nombre: "Hablante " + (n + 1), color: COLORES[n % 4]}; $("mHab").textContent = n + 1; }
   return S.hablantes[h];
 }
@@ -370,8 +474,14 @@ function agregarLinea(h, texto, op = {}) {
   div.querySelector(".texto").textContent = texto;
   $("trans").appendChild(div);
   $("trans").scrollTop = $("trans").scrollHeight;
-  if (!op.interim) { S.lineas.push({t, quien: e.nombre, el: div}); $("mInt").textContent = S.lineas.length; }
+  if (!op.interim && !op.sistema) { S.lineas.push({t, quien: e.nombre, el: div}); $("mInt").textContent = S.lineas.length; }
   return div;
+}
+
+function quitarLinea(el) {
+  if (!el) return;
+  el.remove();
+  S.lineas = S.lineas.filter(l => l.el !== el); $("mInt").textContent = S.lineas.length;
 }
 
 function mostrarInterim(h, texto) {
@@ -381,29 +491,35 @@ function mostrarInterim(h, texto) {
 }
 function quitarInterim() { S.interim?.remove(); S.interim = null; }
 
-/* ---------- voz del usuario: Deepgram con diarización ---------- */
+/* ---------- conversación por voz ---------- */
 async function iniciar() {
   if (S.conversando) return detener();
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
   } catch { toast("Permite el acceso al micrófono para conversar por voz."); return; }
-  S.conversando = true;
+  if (!("stt" in S.salud)) await cargarSalud();
+  S.conversando = true; S.pausa = false; S.turno = []; S.interimTxt = "";
   if (!S.inicio) S.inicio = performance.now();
   $("btnMic").classList.add("on"); $("btnMic").querySelector("span").textContent = "Terminar conversación";
   medirNivel();
-  if (S.doc && !S.presentado) { S.presentado = true; presentar(); }
-  if (S.salud.stt) conectarDeepgram(); else iniciarNavegador();
+  fetch("/api/calentar", {method: "POST"}).catch(() => {});
+  precargarRellenos();
+  saludar();
+  if (S.salud.stt) {
+    S.dgFallo = ""; S.wsFallos = 0; avisoVoz("");
+    chip("chipStt", "Voz: Deepgram (diarización)", "ok");
+    conectarDeepgram();
+  } else iniciarNavegador();
   estadoReposo();
-  
 }
 
 function detener() {
   S.conversando = false;
-  clearInterval(S.keep);
-  try { S.rec?.stop(); } catch {}
-  try { S.ws?.close(); } catch {}
-  try { S.reco?.stop(); } catch {}
-  S.stream?.getTracks().forEach(t => t.stop());
+  interrumpir();
+  clearTimeout(S.tFin); S.tFin = null; S.turno = []; S.interimTxt = ""; S.turnoEnviado = null; S.pausa = false;
+  cerrarDeepgram();
+  pararNavegador();
+  S.stream?.getTracks().forEach(t => t.stop()); S.stream = null;
   S.nivel?.close?.(); S.nivel = null;
   $("nucleo").style.transform = "";
   $("btnMic").classList.remove("on"); $("btnMic").querySelector("span").textContent = "Iniciar conversación";
@@ -411,23 +527,54 @@ function detener() {
   estadoReposo();
 }
 
+/* Deepgram con diarización (vía /ws/stt) */
 function conectarDeepgram() {
+  cerrarDeepgram();
   const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/stt");
   S.ws = ws;
+  let abierto = 0;
   ws.onopen = () => {
-    S.offset = (performance.now() - S.inicio) / 1000;
+    if (S.ws !== ws) return;
+    abierto = performance.now();
     const tipo = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(t => MediaRecorder.isTypeSupported(t));
     S.rec = new MediaRecorder(S.stream, tipo ? {mimeType: tipo} : undefined);
     S.rec.ondataavailable = e => { if (e.data.size && ws.readyState === 1) ws.send(e.data); };
     S.rec.start(250);
+    S.recInicio = performance.now(); S.offset = (S.recInicio - S.inicio) / 1000; S.finPalabra = 0;
     clearInterval(S.keep);
     S.keep = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({type: "KeepAlive"})); }, 8000);
   };
-  ws.onmessage = e => { try { manejarDG(JSON.parse(e.data)); } catch {} };
+  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } try { manejarDG(m, ws); } catch (err) { console.error(err); } };
   ws.onclose = () => {
-    try { S.rec?.stop(); } catch {}
-    if (S.conversando && S.ws === ws) setTimeout(() => S.conversando && conectarDeepgram(), 800);
+    if (S.ws !== ws) return;   // cerrado a propósito
+    S.ws = null; clearInterval(S.keep);
+    try { if (S.rec?.state !== "inactive") S.rec?.stop(); } catch {}
+    S.rec = null;
+    if (!S.conversando || S.dgFallo) return;
+    // Se cerró sola: reconecta; si se cae una y otra vez, pasa al reconocimiento del navegador
+    S.wsFallos = abierto && performance.now() - abierto > 5000 ? 0 : S.wsFallos + 1;
+    if (S.wsFallos >= 3) return falloDeepgram(S.avisoDG || "la conexión de voz se cierra sola");
+    setTimeout(() => { if (S.conversando && !S.ws && !S.dgFallo) conectarDeepgram(); }, 800);
   };
+}
+
+function cerrarDeepgram() {
+  clearInterval(S.keep); S.keep = null;
+  const ws = S.ws, rec = S.rec; S.ws = null; S.rec = null;
+  try { if (rec && rec.state !== "inactive") rec.stop(); } catch {}
+  try { ws?.close(); } catch {}
+}
+
+function avisoVoz(t) { const a = $("avisoVoz"); a.textContent = t; a.style.display = t ? "" : "none"; }
+
+function falloDeepgram(motivo) {
+  if (S.dgFallo) return;
+  S.dgFallo = motivo || "error desconocido";
+  cerrarDeepgram();
+  const corto = S.dgFallo.length > 60 ? S.dgFallo.slice(0, 57) + "…" : S.dgFallo;
+  chip("chipStt", esc(`Voz: navegador (Deepgram falló: ${corto})`), "err");
+  avisoVoz(`Deepgram no está disponible: ${S.dgFallo}. Sigo con el reconocimiento de voz del navegador (sin diarización).`);
+  if (S.conversando) iniciarNavegador();
 }
 
 function segmentos(palabras) {
@@ -440,66 +587,181 @@ function segmentos(palabras) {
   }
   return segs;
 }
+function unir(ps) { return ps.map(w => w.punctuated_word || w.word).join(" ").trim(); }
+
+function manejarDG(m, ws) {
+  if (!S.conversando || S.ws !== ws) return;
+  if (m.type === "Error") return falloDeepgram(m.description);
+  if (m.type === "Aviso") { S.avisoDG = m.description || ""; console.warn("Deepgram:", S.avisoDG); return; }
+  if (m.type === "UtteranceEnd") {
+    // 1,2 s sin palabras: cierra ya, salvo que hayan llegado palabras más nuevas
+    if (S.turno.length && (m.last_word_end == null || m.last_word_end >= S.finPalabra - 0.05)) programarCierre(0, false);
+    return;
+  }
+  if (m.type !== "Results") return;
+  const alt = m.channel?.alternatives?.[0]; if (!alt) return;
+  let ps = alt.words || [];
+  if (!duplex()) {
+    // Semidúplex: fuera las palabras dichas mientras sonaba el agente, según su marca de tiempo en el audio
+    // (los resultados de Deepgram llegan con retraso, así que no basta con mirar cuándo llegan).
+    const propias = ps.filter(w => enVozAgente(S.recInicio + w.start * 1000));
+    if (propias.length) {
+      if (comandoSilencio(unir(propias))) return pausar();
+      ps = ps.filter(w => !propias.includes(w));
+    }
+  }
+  const segs = m.is_final ? segmentos(ps).map(s => ({quien: s.speaker, texto: s.texto, tiempo: S.offset + (s.inicio || 0)})) : null;
+  const tomado = recibirVoz(unir(ps), m.is_final, segs, ps[0]?.speaker ?? 0, "dg");
+  if (tomado) S.finPalabra = Math.max(S.finPalabra, ...ps.map(w => w.end || 0));
+  if (m.speech_final && S.turno.length) {
+    // Fin de frase según Deepgram: adelanta el cierre, pero nunca antes de 600 ms desde la última palabra
+    const silencio = ((m.start || 0) + (m.duration || 0) - S.finPalabra) * 1000;
+    programarCierre(Math.max(0, 600 - silencio), false);
+  }
+}
+
+/* Respaldo: reconocimiento del navegador (sin diarización). Un solo reconocedor activo. */
+function iniciarNavegador() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast("Este navegador no reconoce voz. Usa Chrome o escribe tu pregunta."); return; }
+  pararNavegador();
+  const r = new SR(); S.reco = r;
+  r.lang = "es-CO"; r.continuous = true; r.interimResults = true;
+  r.onresult = ev => {
+    if (!S.conversando || S.reco !== r) return;
+    let interim = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const texto = ev.results[i][0].transcript.trim();
+      if (!ev.results[i].isFinal) { interim += " " + texto; continue; }
+      if (texto) recibirVoz(texto, true, [{quien: "nav", texto, tiempo: (performance.now() - S.inicio) / 1000}], "nav", "nav");
+    }
+    if (interim.trim()) recibirVoz(interim.trim(), false, null, "nav", "nav");
+  };
+  r.onend = () => { if (S.conversando && S.reco === r) try { r.start(); } catch {} };
+  try { r.start(); } catch {}
+}
+function pararNavegador() { const r = S.reco; S.reco = null; try { r?.abort(); } catch {} }
+
+/* ---------- toma de turnos ---------- */
+function duplex() { return $("interrupciones").checked && $("audifonos").checked && !!S.salud.tts && !S.vozNav; }
+function agenteSuena() { return S.hablando || performance.now() < S.ecoHasta; }
+function enVozAgente(t) { return S.tramos.some(x => t >= x.ini && t <= (x.fin ?? Infinity) + ECO_AUDIO_MS); }
 
 function esEco(texto) {
-  if (!S.hablando && !S.pensando && performance.now() > (S.ecoHasta || 0)) return false;
+  if (!S.hablando && !S.pensando && performance.now() > S.ecoSuave) return false;
   const p = norm(texto); if (!p.length) return true;
   const ref = new Set(norm(S.ecoTexto + " " + S.textoHablado + " " + (S.lineaAgente?.querySelector(".texto").textContent || "")));
   return p.filter(w => ref.has(w)).length / p.length >= 0.6;
 }
 
-function manejarDG(m) {
-  if (m.type === "Error") { toast("Transcripción en la nube no disponible: uso el reconocimiento del navegador."); S.salud.stt = false; chip("chipStt", "Voz: navegador", "warn"); try { S.ws.close(); } catch {} iniciarNavegador(); return; }
-  if (m.type === "UtteranceEnd") { cerrarTurno(); return; }
-  if (m.type !== "Results") return;
-  const alt = m.channel?.alternatives?.[0]; if (!alt) return;
-  const texto = (alt.transcript || "").trim();
-  if (!texto) { if (m.speech_final) cerrarTurno(); return; }
-  if (esEco(texto)) return;
-  if (!m.is_final) {
-    mostrarInterim(alt.words?.[0]?.speaker ?? 0, texto);
-    if (S.hablando && $("interrupciones").checked && texto.split(/\s+/).length >= 2) interrumpir();
-    return;
+/* «cállate» dicho en vivo (mientras el agente habla o piensa) */
+function comandoSilencio(t) {
+  const m = sinTildes(t).match(RE_SILENCIO);
+  if (!m) return false;
+  // si esa palabra está en lo que el agente acaba de decir, es su propio eco
+  return !((S.hablando || performance.now() < S.ecoSuave) && sinTildes(S.ecoTexto).includes(m[0]));
+}
+/* turno completo que pide silencio; «espera, ¿y en Pereira?» es una pregunta, no un comando */
+function pideSilencio(t) {
+  const m = sinTildes(t).match(new RegExp(RE_SILENCIO.source, "g"));
+  return !!m && !(m.every(x => x === "espera") && esPregunta(t));
+}
+
+/* Todo resultado de reconocimiento (Deepgram o navegador) pasa por aquí. Devuelve true si se tomó en cuenta. */
+function recibirVoz(texto, final, segs, quien, fuente) {
+  if (!S.conversando) return false;
+  texto = (texto || "").trim();
+  if (final) S.interimTxt = "";
+  if (!duplex() && agenteSuena()) {   // semidúplex: mientras el agente habla solo cuenta «cállate»
+    if (comandoSilencio(texto)) pausar();
+    return false;
   }
-  quitarInterim();
-  if (S.hablando && $("interrupciones").checked) interrumpir();
-  for (const s of segmentos(alt.words || [])) {
-    const quien = etiqueta(s.speaker).nombre;
-    const l = agregarLinea(s.speaker, s.texto, {tiempo: S.offset + (s.inicio || 0), canal: "voz"});
-    S.turno.push(s.texto);
-    analizar(l, quien, s.texto);
-  }
-  if (m.speech_final) cerrarTurno();
+  if (!texto) return false;
+  if ((duplex() || fuente === "nav") && esEco(texto)) return false;
+  if ((S.hablando || S.pensando) && comandoSilencio(texto)) { pausar(); return false; }
+  if (S.hablando) {                   // solo con audífonos: cualquier voz interrumpe
+    if (!final && palabras(texto) < 2) return false;
+    interrumpir();
+  } else if (S.pensando && !S.sonoRespuesta && (final || palabras(texto) >= 2)) retomarTurno();
+  S.ultimaVoz = performance.now();
+  if (final) S.turno.push(...segs);
+  else { S.interimTxt = texto; S.interimQuien = quien; }
+  const visible = [...S.turno.filter(s => !s.mostrado).map(s => s.texto), S.interimTxt].join(" ").trim();
+  if (visible) mostrarInterim(quien, "(escuchando…) " + visible);
+  programarFinTurno();
+  return true;
+}
+
+/* Cierra el turno tras 900 ms sin resultados nuevos (400 ms si termina en «?»). Cada resultado reinicia la cuenta. */
+function programarFinTurno() {
+  const texto = [...S.turno.map(s => s.texto), S.interimTxt].join(" ").trim();
+  if (texto) programarCierre(/\?\s*$/.test(texto) ? 400 : 900, true);
+}
+function programarCierre(ms, reiniciar) {
+  const en = performance.now() + ms;
+  if (!reiniciar && S.tFin && S.cierreEn <= en) return;   // adelantar nunca retrasa
+  clearTimeout(S.tFin); S.cierreEn = en; S.tFin = setTimeout(cerrarTurno, ms);
 }
 
 function cerrarTurno() {
+  clearTimeout(S.tFin); S.tFin = null;
+  if (!S.conversando) return;
+  if (S.interimTxt) {
+    // aún falta el resultado final de lo último que se dijo: se espera un poco antes de usar el parcial
+    if (performance.now() - S.ultimaVoz < 1500) return programarCierre(300, true);
+    S.turno.push({quien: S.interimQuien, texto: S.interimTxt, tiempo: (S.ultimaVoz - S.inicio) / 1000});
+    S.interimTxt = "";
+  }
   quitarInterim();
-  if (!S.turno.length) return;
-  const pregunta = S.turno.join(" "); S.turno = [];
-  S.finVoz = performance.now();
-  responder(pregunta);
+  const segs = S.turno; S.turno = [];
+  if (!segs.length) return;
+  const texto = segs.map(s => s.texto).join(" ").replace(/\s+/g, " ").trim();
+  const tipo = clasificarTurno(texto);
+  for (const g of agrupar(segs.filter(s => !s.mostrado))) {
+    const l = agregarLinea(g.quien, g.texto, {tiempo: g.tiempo, canal: "voz"});
+    if (tipo !== "inutil") analizar(l, etiqueta(g.quien).nombre, g.texto);
+  }
+  if (tipo === "silencio") return pausar();
+  if (tipo !== "enviar") return;      // fragmento o charla en pausa: queda solo en la transcripción
+  S.pausa = false; S.esperaRespuesta = false;
+  S.turnoEnviado = segs.map(s => ({...s, mostrado: true}));
+  S.lat = {t0: performance.now(), token: null, audio: null};
+  responder(texto);
 }
 
-/* respaldo: reconocimiento del navegador (sin diarización) */
-function iniciarNavegador() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { toast("Este navegador no reconoce voz. Usa Chrome o escribe tu pregunta."); return; }
-  const r = new SR(); S.reco = r;
-  r.lang = "es-CO"; r.continuous = true; r.interimResults = true;
-  r.onresult = ev => {
-    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-      const texto = ev.results[i][0].transcript.trim();
-      if (!texto || esEco(texto)) continue;
-      if (!ev.results[i].isFinal) { mostrarInterim("nav", texto); if (S.hablando && $("interrupciones").checked && texto.split(" ").length >= 2) interrumpir(); continue; }
-      quitarInterim();
-      const l = agregarLinea("nav", texto, {canal: "voz"});
-      analizar(l, etiqueta("nav").nombre, texto);
-      S.finVoz = performance.now();
-      responder(texto);
-    }
-  };
-  r.onend = () => { if (S.conversando && S.reco === r) try { r.start(); } catch {} };
-  try { r.start(); } catch {}
+function agrupar(segs) {
+  const g = [];
+  for (const s of segs) { const u = g[g.length - 1]; if (u && u.quien === s.quien) u.texto += " " + s.texto; else g.push({...s}); }
+  return g;
+}
+
+function clasificarTurno(t) {
+  const p = sinTildes(t);
+  if (pideSilencio(t)) return "silencio";
+  if (S.pausa) return esPregunta(t) || RE_PIDE.test(p) || RE_SALUDO.test(p) ? "enviar" : "ignorar";
+  // menos de 3 palabras sin pregunta ni saludo/despedida: fragmento (salvo que el agente acabe de preguntar algo)
+  if (palabras(t) < 3 && !esPregunta(t) && !RE_SOCIAL.test(p) && !S.esperaRespuesta) return "inutil";
+  return "enviar";
+}
+
+/* El usuario siguió hablando antes de oír la respuesta: se descarta y se espera el turno completo. */
+function retomarTurno() {
+  const previo = S.turnoEnviado || [], l = S.lineaAgente;
+  interrumpir(true);
+  if (l) { if (conContenido(l.querySelector(".texto").textContent)) l.classList.add("interrumpida"); else quitarLinea(l); }
+  S.lineaAgente = null;
+  S.turno = [...previo, ...S.turno]; S.turnoEnviado = null;
+}
+
+function pausar() {
+  interrumpir();
+  clearTimeout(S.tFin); S.tFin = null; S.turno = []; S.interimTxt = ""; S.turnoEnviado = null;
+  quitarInterim();
+  entrarPausa();
+}
+function entrarPausa() {
+  if (!S.pausa) { S.pausa = true; agregarLinea("sistema", "Agente en pausa. Haz una pregunta para continuar.", {sistema: true}); }
+  estadoReposo();
 }
 
 /* nivel del micrófono para animar el orbe */
@@ -526,69 +788,101 @@ function preguntarTexto(t) {
   if (!S.inicio) S.inicio = performance.now();
   const l = agregarLinea("texto", t, {canal: "escrito"});
   analizar(l, etiqueta("texto").nombre, t);
-  S.finVoz = performance.now();
+  if (pideSilencio(t)) return pausar();
+  S.pausa = false; S.esperaRespuesta = false; S.turnoEnviado = null;
+  S.lat = {t0: performance.now(), token: null, audio: null};
   responder(t);
 }
 
 async function responder(pregunta) {
   if (!S.doc) { toast("Los datos de datos.gov.co aún se están cargando."); return; }
   interrumpir(true);
-  S.ecoTexto = "";
   const ctrl = new AbortController(); S.abort = ctrl;
-  S.pensando = true; estado("pensando");
-  const linea = agregarLinea("agente", ""); S.lineaAgente = linea;
-  const caja = linea.querySelector(".texto");
-  let completo = "", buffer = "", primera = true;
+  const lat = S.lat;
+  S.pensando = true; S.sonoRespuesta = false; S.lineaAgente = null; estado("pensando");
+  // la burbuja se crea con el primer texto: un "silencio" o una respuesta vacía no dejan rastro
+  let linea = null;
+  const burbuja = () => linea || (linea = S.lineaAgente = agregarLinea("agente", ""));
+  let completo = "", buffer = "", primera = true, ruta = "", silencio = false, relleno = false;
   const pasos = [];
   try {
     const r = await fetch("/api/preguntar", {method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({sesion: S.sesion, pregunta}), signal: ctrl.signal});
     if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "Error del servidor"); }
     const lector = r.body.getReader(); const dec = new TextDecoder(); let resto = "";
-    while (true) {
+    while (S.abort === ctrl) {
       const {done, value} = await lector.read(); if (done) break;
       resto += dec.decode(value, {stream: true});
       const partes = resto.split("\n"); resto = partes.pop();
       for (const p of partes) {
-        if (!p.trim()) continue;
+        if (!p.trim() || S.abort !== ctrl) continue;
         const ev = JSON.parse(p);
         if (ev.t === "delta") {
-          completo += ev.x; buffer += ev.x; caja.textContent = completo;
-          $("trans").scrollTop = $("trans").scrollHeight;
-          // enviar a voz cada frase completa (la primera, apenas exista)
-          let m;
-          while ((m = buffer.match(/^([\s\S]*?[.!?;:])(\s+|$)/)) && (primera ? m[1].trim().length >= 8 : m[1].trim().length >= 30)) {
-            if (!m[2]) break;
-            hablar(m[1].trim()); buffer = buffer.slice(m[0].length); primera = false;
+          if (lat && lat.token == null) { lat.token = Math.round(performance.now() - lat.t0); pintarLatencia(lat); }
+          completo += ev.x; buffer += ev.x;
+          if (conContenido(completo)) { burbuja().querySelector(".texto").textContent = completo; $("trans").scrollTop = $("trans").scrollHeight; }
+          // a voz por frases: la primera en la primera pausa natural (, ; : con ≥25 caracteres); las siguientes en . ? !
+          const re = /[,;:.!?](?=\s)/g; let m;
+          while ((m = re.exec(buffer))) {
+            const trozo = buffer.slice(0, m.index + 1).trim(), fuerte = ".!?".includes(m[0]);
+            if (primera ? trozo.length >= (fuerte ? 8 : 25) : fuerte && trozo.length >= 20) {
+              hablar(trozo, {lat}); buffer = buffer.slice(m.index + 1); primera = false; re.lastIndex = 0;
+            }
           }
-        } else if (ev.t === "decision") { pasos.length = 0; pasos.push({tipo: "decision", ...ev.x}); pintarDecisiones(pasos, pregunta); }
-        else if (ev.t === "paso") {
+        } else if (ev.t === "decision") { ruta = ev.x.ruta; pasos.length = 0; pasos.push({tipo: "decision", ...ev.x}); pintarDecisiones(pasos, pregunta); }
+        else if (ev.t === "consultando") {
+          // el modelo pidió una herramienta: frase de relleno precargada mientras llega la respuesta
+          if (!relleno && !conContenido(completo) && !S.sonoRespuesta) { relleno = true; decirRelleno(); }
+        } else if (ev.t === "paso") {
           pasos.push(ev.x); pintarDecisiones(pasos, pregunta);
           const h = document.createElement("div"); h.className = "herr";
           const etiquetaEstado = {ok: "consulta", error: "corrigiendo", sospechoso: "ajustando"}[ev.x.estado] || ev.x.estado;
           h.innerHTML = `${etiquetaEstado}: <code>${esc(ev.x.herramienta)}</code> <code>${esc(JSON.stringify(ev.x.args)).slice(0, 120)}</code>`;
-          linea.querySelector(".burbuja").appendChild(h);
+          burbuja().querySelector(".burbuja").appendChild(h);
         } else if (ev.t === "escalamiento") mostrarEscalamiento(ev.x);
-        else if (ev.t === "fin") { pasos.push({tipo: "fin", ...ev.x}); pintarDecisiones(pasos, pregunta); }
+        else if (ev.t === "silencio") silencio = true;
+        else if (ev.t === "fin") { if (!silencio) { pasos.push({tipo: "fin", ...ev.x}); pintarDecisiones(pasos, pregunta); } }
         else if (ev.t === "error") console.warn(ev.x);
       }
     }
-    if (buffer.trim()) hablar(buffer.trim());
+    if (S.abort !== ctrl) return;
+    if (silencio) return entrarPausa();
+    if (buffer.trim()) hablar(buffer.trim(), {lat});
+    if (!conContenido(completo)) { quitarLinea(linea); return; }   // nunca "..." ni burbujas vacías
+    S.esperaRespuesta = ruta !== "instantánea" && /\?\s*$/.test(completo);
     analizar(linea, "Agente", completo);
   } catch (e) {
-    if (e.name !== "AbortError") { caja.textContent = "No pude responder: " + e.message; toast(e.message); }
+    if (e.name !== "AbortError") { burbuja().querySelector(".texto").textContent = "No pude responder: " + e.message; toast(e.message); }
   } finally {
-    if (S.abort === ctrl) S.abort = null;
-    S.pensando = false;
+    if (S.abort === ctrl) { S.abort = null; S.pensando = false; }
     if (!S.cola.length && !S.actual) estadoReposo();
   }
 }
 
+/* frases de relleno: audio precargado al iniciar la conversación para que suene sin esperar al TTS */
+function precargarRellenos() {
+  if (!S.salud.tts || S.rellenos) return;
+  S.rellenos = [];
+  RELLENOS.forEach((t, i) => fetch("/api/tts?texto=" + encodeURIComponent(t))
+    .then(r => r.ok ? r.blob() : null)
+    .then(b => { if (b) S.rellenos[i] = {texto: t, url: URL.createObjectURL(b)}; })
+    .catch(() => {}));
+}
+function decirRelleno() {
+  if (!S.salud.tts) return hablar(RELLENOS[S.nRelleno++ % RELLENOS.length], {relleno: true});
+  const listos = (S.rellenos || []).filter(Boolean);
+  if (!listos.length) return;   // sin audio listo llegaría tarde: mejor nada
+  const r = listos[S.nRelleno++ % listos.length];
+  hablar(r.texto, {url: r.url, relleno: true});
+}
+
 /* cola de voz: cada frase se pide al TTS en paralelo y se reproduce en orden */
-function hablar(texto, esPresentacion) {
-  texto = texto.replace(/\s+/g, " ").trim(); if (!texto) return;
-  const item = {texto, audio: null};
-  if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; }
+function hablar(texto, op = {}) {
+  texto = String(texto || "").replace(/\s+/g, " ").trim();
+  if (!conContenido(texto)) return;   // nunca se lee "..." ni texto vacío
+  const item = {texto, audio: null, relleno: !!op.relleno, lat: op.lat || null};
+  if (op.url) item.audio = new Audio(op.url);
+  else if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; }
   S.cola.push(item);
   if (!S.actual) siguiente();
 }
@@ -596,43 +890,59 @@ function hablar(texto, esPresentacion) {
 function siguiente() {
   const it = S.cola.shift();
   S.actual = it || null;
-  if (!it) { if (S.hablando) S.ecoHasta = performance.now() + 2500; S.hablando = false; S.textoHablado = ""; $("nucleo").style.transform = ""; estadoReposo(); return; }
-  S.hablando = true; S.textoHablado = it.texto; S.ecoTexto = (S.ecoTexto + " " + it.texto).slice(-1500); estado("hablando");
+  if (!it) { if (S.hablando) finVoz(); S.textoHablado = ""; $("nucleo").style.transform = ""; estadoReposo(); return; }
+  if (!S.hablando) { S.tramos.push({ini: performance.now(), fin: null}); if (S.tramos.length > 20) S.tramos.shift(); }
+  S.hablando = true; S.sonoRespuesta = true; S.vozNav = !it.audio;
+  S.textoHablado = it.texto; S.ecoTexto = (S.ecoTexto + " " + it.texto).slice(-1500); estado("hablando");
   const fin = () => { if (S.actual === it) siguiente(); };
-  const respaldo = () => { if (S.actual !== it) return; it.audio = null; hablarNavegador(it.texto, fin); };
+  const respaldo = () => { if (S.actual !== it) return; it.audio = null; S.vozNav = true; hablarNavegador(it.texto, fin, () => marcarLatencia(it)); };
   if (it.audio) {
-    it.audio.onplaying = marcarLatencia;
+    it.audio.onplaying = () => marcarLatencia(it);
     it.audio.onended = fin;
     it.audio.onerror = respaldo;
     it.audio.play().catch(respaldo);
-  } else hablarNavegador(it.texto, fin);
+  } else hablarNavegador(it.texto, fin, () => marcarLatencia(it));
 }
 
-function hablarNavegador(texto, fin) {
+/* el agente dejó de sonar: desde aquí corren los 800 ms de semidúplex */
+function finVoz() {
+  const ahora = performance.now(), t = S.tramos[S.tramos.length - 1];
+  if (t && t.fin == null) t.fin = ahora;
+  S.hablando = false; S.ecoHasta = ahora + ECO_MS; S.ecoSuave = ahora + 2500;
+}
+
+function hablarNavegador(texto, fin, inicio) {
   if (!window.speechSynthesis) return fin();
   const u = new SpeechSynthesisUtterance(texto); u.lang = "es-CO"; u.rate = 1.05;
   const voces = speechSynthesis.getVoices();
   u.voice = voces.find(v => /es[-_](CO|MX|US|419)/i.test(v.lang) && /google|natural|online/i.test(v.name)) || voces.find(v => /^es/i.test(v.lang)) || null;
-  u.onstart = marcarLatencia; u.onend = fin; u.onerror = fin;
+  u.onstart = inicio; u.onend = fin; u.onerror = fin;
   speechSynthesis.speak(u);
 }
 
-function marcarLatencia() {
-  if (!S.finVoz) return;
-  const ms = Math.round(performance.now() - S.finVoz); S.finVoz = 0;
-  S.latencias.push(ms);
-  $("mLat").textContent = (ms / 1000).toFixed(2) + " s";
-  $("mLatProm").textContent = (S.latencias.reduce((a, b) => a + b, 0) / S.latencias.length / 1000).toFixed(2) + " s";
+/* latencia: fin de turno → primer token → primer audio de la respuesta (el relleno no cuenta) */
+function marcarLatencia(it) {
+  const l = it.lat;
+  if (!l || it.relleno || l.audio != null) return;
+  l.audio = Math.round(performance.now() - l.t0);
+  S.latencias.push(l.audio);
+  pintarLatencia(l);
+}
+function pintarLatencia(l) {
+  const ms = v => v == null ? "…" : fmtN(v) + " ms";
+  $("mLat").textContent = `fin de turno → primer token ${ms(l.token)} → primer audio ${ms(l.audio)}`;
+  if (S.latencias.length) $("mLatProm").textContent = fmtN(Math.round(S.latencias.reduce((a, b) => a + b, 0) / S.latencias.length)) + " ms";
 }
 
 function interrumpir(silencioso) {
   const habia = S.hablando || S.pensando;
   S.abort?.abort(); S.abort = null;
-  for (const it of [S.actual, ...S.cola]) if (it?.audio) { it.audio.onended = it.audio.onerror = null; it.audio.pause(); it.audio.removeAttribute("src"); it.audio.load(); }
+  for (const it of [S.actual, ...S.cola]) if (it?.audio) { it.audio.onended = it.audio.onerror = it.audio.onplaying = null; it.audio.pause(); it.audio.removeAttribute("src"); it.audio.load(); }
   S.cola = []; S.actual = null;
   try { speechSynthesis.cancel(); } catch {}
   if (habia && S.lineaAgente && !silencioso) S.lineaAgente.classList.add("interrumpida");
-  S.hablando = false; S.pensando = false; S.textoHablado = "";
+  if (S.hablando) finVoz();
+  S.pensando = false; S.textoHablado = "";
   estadoReposo();
 }
 
@@ -691,8 +1001,9 @@ function pintarPanel() {
 function pintarDecisiones(pasos, pregunta) {
   const html = pasos.map((p, i) => {
     if (p.tipo === "decision") {
-      const ruta = p.ruta === "social" ? "Charla social → modelo rápido, sin herramientas" : "Consulta de datos → modelo con herramientas";
-      return `<div class="paso decision"><span class="n">R</span><div><b>${ruta}</b><small>Modelo: ${esc(p.modelo)} · Emoción: ${esc(p.emocion)}${p.escalar ? " · <b style='color:var(--neg)'>Escalar: " + esc(p.escalar) + "</b>" : ""}${Object.keys(p.contexto || {}).length ? "<br>Contexto activo: " + esc(Object.entries(p.contexto).map(([k, v]) => k + "=" + v).join(", ")) : ""}</small></div></div>`;
+      const ruta = {social: "Charla social → modelo rápido, sin herramientas", "instantánea": "Respuesta instantánea → plantilla, sin modelo"}[p.ruta]
+        || (p.fuente_tipo === "documento" ? "Consulta del documento → modelo con herramientas" : "Consulta de datos → modelo con herramientas");
+      return `<div class="paso decision"><span class="n">R</span><div><b>${ruta}</b><small>${p.fuente_tipo && p.fuente_tipo !== "api" ? "Fuente: " + esc(p.fuente) + " · " : ""}Modelo: ${esc(p.modelo)} · Emoción: ${esc(p.emocion)}${p.escalar ? " · <b style='color:var(--neg)'>Escalar: " + esc(p.escalar) + "</b>" : ""}${Object.keys(p.contexto || {}).length ? "<br>Contexto activo: " + esc(Object.entries(p.contexto).map(([k, v]) => k + "=" + v).join(", ")) : ""}</small></div></div>`;
     }
     if (p.tipo === "fin") return `<div class="paso"><span class="n">✓</span><div><b>Respuesta en ${(p.ms_total / 1000).toFixed(2)} s</b><small>Primer token ${(p.ms_primer_token / 1000).toFixed(2)} s · modelo real ${esc(p.modelo)} · ${p.consultas} consultas, ${p.exitos} válidas${p.fallos_seguidos ? " · turnos sin respuesta: " + p.fallos_seguidos : ""}</small></div></div>`;
     const accion = {ok: "Resultado válido", error: "Valor no encontrado → se corrige", sospechoso: "Resultado sospechoso → ajusta filtro"}[p.estado] || p.estado;
@@ -720,8 +1031,12 @@ function exportar() {
 /* ---------- eventos ---------- */
 $("btnMic").onclick = iniciar;
 $("btnCallar").onclick = () => interrumpir();
-$("btnEscuchar").onclick = presentar;
+$("btnEscuchar").onclick = leerBrief;
+$("btnArchivo").onclick = () => $("archivo").click();
+$("archivo").onchange = e => subirArchivo(e.target.files[0]);
+$("btnApi").onclick = volverApi;
 $("btnExportar").onclick = exportar;
+$("interrupciones").onchange = $("audifonos").onchange = () => estadoReposo();
 $("formTexto").onsubmit = e => { e.preventDefault(); const t = $("texto").value; $("texto").value = ""; preguntarTexto(t); };
 etiqueta("agente");
 pintarPanel();

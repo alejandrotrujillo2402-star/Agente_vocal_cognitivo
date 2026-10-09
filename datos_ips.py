@@ -8,6 +8,8 @@ import difflib
 import os
 import re
 import unicodedata
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +33,27 @@ SINONIMOS = {"uci adultos": ["intensiva adultos", "cuidado intensivo adulto"],
                            "cuidado intensivo pediatrico", "intensiva neonatal", "cuidado intensivo neonatal"]}
 
 _D = {"df": None, "fuente": "sin datos", "actualizado": None, "brief": None}
+# Fuente de la sesión en curso: un archivo del usuario con las columnas del dataset. None = la API (_D).
+_ACTIVA: ContextVar = ContextVar("fuente_activa", default=None)
+
+
+def _fuente():
+    return _ACTIVA.get() or _D
+
+
+@contextmanager
+def con_fuente(fuente):
+    """Dentro del bloque, las herramientas, estado() y brief() usan `fuente` en lugar de la API."""
+    token = _ACTIVA.set(fuente)
+    try:
+        yield
+    finally:
+        _ACTIVA.reset(token)
+
+
+def fuente_desde_tabla(df, nombre):
+    """Tabla con las columnas del dataset -> fuente propia, con la misma normalización que la API."""
+    return {"df": _preparar(df), "fuente": f"archivo {nombre}", "actualizado": datetime.now().strftime("%H:%M"), "brief": None}
 
 
 def norm(t):
@@ -119,23 +142,25 @@ def usar_dataframe(df, fuente="prueba"):
 
 
 def _df():
-    if _D["df"] is None:
+    df = _fuente()["df"]
+    if df is None:
         raise RuntimeError("datos no cargados")
-    return _D["df"]
+    return df
 
 
 def fecha_corte():
-    df = _D["df"]
+    df = _fuente()["df"]
     return (df["fecha_corte"].mode().iat[0] if df is not None and len(df) else "")
 
 
 def estado():
-    df = _D["df"]
+    f = _fuente()
+    df = f["df"]
     if df is None:
-        return {"fuente": _D["fuente"], "filas": 0, "error": _D.get("error_api")}
-    return {"fuente": _D["fuente"], "filas": int(len(df)), "prestadores": int(df["prestador_id"].nunique()),
+        return {"fuente": f["fuente"], "filas": 0, "error": f.get("error_api")}
+    return {"fuente": f["fuente"], "filas": int(len(df)), "prestadores": int(df["prestador_id"].nunique()),
             "sedes": int(df["sede_id"].nunique()), "municipios": int(df[["departamento", "municipio"]].drop_duplicates().shape[0]),
-            "fecha_corte": fecha_corte(), "actualizado": _D["actualizado"], "error_api": _D.get("error_api")}
+            "fecha_corte": fecha_corte(), "actualizado": f["actualizado"], "error_api": f.get("error_api")}
 
 
 # ---------------- resolución de valores ----------------
@@ -391,8 +416,9 @@ def miles(n):
 
 
 def brief():
-    if _D.get("brief"):
-        return _D["brief"]
+    f = _fuente()
+    if f.get("brief"):
+        return f["brief"]
     df = _df()
     e = estado()
     nat = df.drop_duplicates("prestador_id")["naturaleza"].value_counts()
@@ -415,7 +441,7 @@ def brief():
          "presentacion_voz": (f"Tengo cargado el registro oficial de IPS de Colombia: {e['prestadores']} prestadores y {e['sedes']} sedes, "
                               "con su capacidad instalada. Pregúntame por camas, ambulancias, una IPS o un municipio."),
          "stats": {**e, "naturaleza": {k: int(v) for k, v in nat.items()}, "camas": camas, "uci_adultos": uci}}
-    _D["brief"] = b
+    f["brief"] = b
     return b
 
 

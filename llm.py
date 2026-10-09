@@ -5,20 +5,35 @@ import asyncio
 import json
 import os
 import re
+from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
-from openai import APIStatusError, AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient
 
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"))
 
-CLAVE = os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY", "")
-BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
-MODELO = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")                 # decisiones con herramientas
-MODELO_RAPIDO = os.getenv("LLM_MODEL_RAPIDO", "openai/gpt-oss-20b")  # sentimiento y charla social
-RESPALDOS = [m for m in os.getenv("LLM_RESPALDOS", "openai/gpt-oss-20b").split(",") if m]
+CLAVE = (os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY", "")).strip()
+BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1").strip()
+MODELO = os.getenv("LLM_MODEL", "openai/gpt-oss-120b").strip()                 # decisiones con herramientas
+MODELO_RAPIDO = os.getenv("LLM_MODEL_RAPIDO", "openai/gpt-oss-20b").strip()  # sentimiento y charla social
+RESPALDOS = [m.strip() for m in os.getenv("LLM_RESPALDOS", "openai/gpt-oss-20b").split(",") if m.strip()]
 
-cliente = AsyncOpenAI(api_key=CLAVE or "sin-clave", base_url=BASE_URL, max_retries=0, timeout=30)
+# Conexiones vivas 2 min (por defecto son 5 s): la pregunta siguiente no repite el handshake TLS.
+cliente = AsyncOpenAI(api_key=CLAVE or "sin-clave", base_url=BASE_URL, max_retries=0, timeout=30,
+                      http_client=DefaultAsyncHttpxClient(limits=httpx.Limits(
+                          max_connections=100, max_keepalive_connections=20, keepalive_expiry=120)))
 ULTIMO_MODELO = {"nombre": MODELO}
+
+
+async def calentar():
+    """Llamada mínima para abrir la conexión con el proveedor antes de la primera pregunta real."""
+    if not CLAVE:
+        return
+    try:
+        await cliente.chat.completions.create(model=MODELO, messages=[{"role": "user", "content": "ok"}], max_tokens=1)
+    except Exception as e:  # aunque el proveedor la rechace, la conexión ya quedó abierta
+        print("Calentamiento del LLM:", str(e)[:120])
 
 
 def _espera(e):
