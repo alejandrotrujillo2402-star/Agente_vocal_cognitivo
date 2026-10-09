@@ -5,5 +5,3 @@ __pycache__/
 .pytest_cache/
 .env*
 !.env.example
-logs/
-data/brief_cache.json

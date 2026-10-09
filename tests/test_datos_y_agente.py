@@ -175,11 +175,11 @@ async def test_enrutador_social_sin_herramientas(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_saludo_con_pregunta_resuelve_la_cifra_sin_llm(monkeypatch):
-    sin_llm(monkeypatch)
+async def test_saludo_con_pregunta_usa_herramientas(monkeypatch):
+    stream, vistos = guion("Hay 3 sedes.")
+    monkeypatch.setattr(llm, "stream", stream)
     ev = await correr("a9", "Hola, ¿cuántas sedes hay en Caldas?")
-    texto = "".join(e["x"] for e in ev if e["t"] == "delta")
-    assert ev[0]["x"]["ruta"] == "directa" and texto == "Hay 3 sedes de IPS en Caldas."
+    assert ev[0]["x"]["ruta"] == "herramientas" and vistos[0]["tools"]
 
 
 def sin_llm(monkeypatch):
@@ -236,9 +236,7 @@ async def test_responder_no_espera_el_analisis_emocional(monkeypatch):
     monkeypatch.setattr(llm, "json_rapido", lento)
     stream, _ = guion("Hay 5 sedes.")
     monkeypatch.setattr(llm, "stream", stream)
-    # texto largo y sin señales claras: el clasificador local no basta y va al LLM (lento aquí)
-    analisis = asyncio.create_task(api.analizar(api.Analisis(texto="le cuento esto para un trabajo de la universidad que tengo",
-                                                             hablante="Hablante 1", sesion="e1")))
+    analisis = asyncio.create_task(api.analizar(api.Analisis(texto="¿cuántas sedes?", hablante="Hablante 1", sesion="e1")))
     await asyncio.sleep(0)  # el análisis queda en curso
     t0 = time.perf_counter()
     ev = await correr("e1", "¿cuántas sedes hay?")
