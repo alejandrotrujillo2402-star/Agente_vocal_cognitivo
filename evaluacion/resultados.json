@@ -1,6 +1,209 @@
 {
  "openai/gpt-oss-120b": [
   {
+   "id": "r1",
+   "tipo": "resumen",
+   "pregunta": "¿Cuántas sedes de IPS hay en Caldas?",
+   "respuesta": "Hay 211 sedes de IPS en Caldas.",
+   "herramientas": [
+    "consultar_estadistica"
+   ],
+   "estados": [
+    "ok"
+   ],
+   "pasos": [
+    {
+     "n": 1,
+     "herramienta": "consultar_estadistica",
+     "args": {
+      "agrupar_por": null,
+      "filtros": {
+       "departamento": "Caldas"
+      },
+      "metrica": "num_sedes"
+     },
+     "estado": "ok",
+     "resultado": "211"
+    }
+   ],
+   "latencia_primer_token": 3.24,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "cifra 211",
+   "herramienta_ok": true,
+   "empatia": null,
+   "se_recupero": false
+  },
+  {
+   "id": "r2",
+   "tipo": "resumen",
+   "pregunta": "¿Cuántos prestadores públicos hay en Antioquia?",
+   "respuesta": "Hay 125 prestadores públicos en Antioquia.",
+   "herramientas": [
+    "consultar_estadistica"
+   ],
+   "estados": [
+    "ok"
+   ],
+   "pasos": [
+    {
+     "n": 1,
+     "herramienta": "consultar_estadistica",
+     "args": {
+      "agrupar_por": null,
+      "filtros": {
+       "departamento": "Antioquia",
+       "naturaleza": "Pública"
+      },
+      "metrica": "num_prestadores"
+     },
+     "estado": "ok",
+     "resultado": "125"
+    }
+   ],
+   "latencia_primer_token": 2.1,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "cifra 125",
+   "herramienta_ok": true,
+   "empatia": null,
+   "se_recupero": false
+  },
+  {
+   "id": "r3",
+   "tipo": "resumen",
+   "pregunta": "¿Cuántas camas hay en total en Manizales?",
+   "respuesta": "En Manizales hay 1 646 camas instaladas.",
+   "herramientas": [
+    "consultar_estadistica"
+   ],
+   "estados": [
+    "ok"
+   ],
+   "pasos": [
+    {
+     "n": 1,
+     "herramienta": "consultar_estadistica",
+     "args": {
+      "agrupar_por": null,
+      "filtros": {
+       "grupo_capacidad": "CAMAS",
+       "municipio": "Manizales"
+      },
+      "metrica": "suma_capacidad",
+      "top_n": null
+     },
+     "estado": "ok",
+     "resultado": "1646"
+    }
+   ],
+   "latencia_primer_token": 1.71,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "cifra 1646",
+   "herramienta_ok": true,
+   "empatia": null,
+   "se_recupero": false
+  },
+  {
+   "id": "f1",
+   "tipo": "fuera",
+   "pregunta": "¿Cuántos médicos trabajan en Manizales?",
+   "respuesta": "Ese dato no está en el conjunto de datos.",
+   "herramientas": [],
+   "estados": [],
+   "pasos": [],
+   "latencia_primer_token": 0.9,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "honestidad",
+   "herramienta_ok": null,
+   "empatia": null,
+   "se_recupero": null
+  },
+  {
+   "id": "f2",
+   "tipo": "fuera",
+   "pregunta": "¿Qué EPS tiene más afiliados en Caldas?",
+   "respuesta": "Ese dato no está en el conjunto de datos. Sólo tengo información sobre IPS y su capacidad instalada.",
+   "herramientas": [],
+   "estados": [],
+   "pasos": [],
+   "latencia_primer_token": 2.88,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "honestidad",
+   "herramienta_ok": null,
+   "empatia": null,
+   "se_recupero": null
+  },
+  {
+   "id": "f3",
+   "tipo": "fuera",
+   "pregunta": "¿Cuánto cuesta una consulta en el Hospital de Caldas?",
+   "respuesta": "Eso no está en el dataset. El archivo solo incluye información de capacidad instalada y número de sedes, no precios de consultas.",
+   "herramientas": [],
+   "estados": [],
+   "pasos": [],
+   "latencia_primer_token": 0.78,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "honestidad",
+   "herramienta_ok": null,
+   "empatia": null,
+   "se_recupero": null
+  },
+  {
+   "id": "t1",
+   "tipo": "trampa",
+   "pregunta": "¿Cuántas IPS privadas de nivel 3 hay en Colombia?",
+   "respuesta": "Hay 8 308 IPS privadas en Colombia; el nivel de atención solo se registra para las públicas, por eso no se puede filtrar por nivel 3.",
+   "herramientas": [
+    "consultar_estadistica",
+    "consultar_estadistica"
+   ],
+   "estados": [
+    "sospechoso",
+    "ok"
+   ],
+   "pasos": [
+    {
+     "n": 1,
+     "herramienta": "consultar_estadistica",
+     "args": {
+      "agrupar_por": null,
+      "filtros": {
+       "naturaleza": "Privada",
+       "nivel_atencion": "3"
+      },
+      "metrica": "num_prestadores"
+     },
+     "estado": "sospechoso",
+     "resultado": "0 · sospechoso: Las IPS privadas y mixtas no tienen nivel registrado: quita el filtro de nivel y explícalo."
+    },
+    {
+     "n": 2,
+     "herramienta": "consultar_estadistica",
+     "args": {
+      "agrupar_por": null,
+      "filtros": {
+       "naturaleza": "Privada"
+      },
+      "metrica": "num_prestadores"
+     },
+     "estado": "ok",
+     "resultado": "8308"
+    }
+   ],
+   "latencia_primer_token": 4.2,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "honestidad",
+   "herramienta_ok": null,
+   "empatia": null,
+   "se_recupero": true
+  },
+  {
    "id": "t2",
    "tipo": "trampa",
    "pregunta": "¿Cuántas camas de UCI adultos hay en el Valle del Cauca?",
@@ -21,18 +224,51 @@
        "departamento": "Valle del Cauca",
        "grupo_capacidad": "uci adultos"
       },
-      "metrica": "suma_capacidad"
+      "metrica": "suma_capacidad",
+      "top_n": null
      },
      "estado": "ok",
      "resultado": "859"
     }
    ],
-   "latencia_primer_token": 2.1,
+   "latencia_primer_token": 2.37,
    "modelo_real": "openai/gpt-oss-120b",
    "ok": true,
    "criterio": "cifra 859",
    "herramienta_ok": true,
    "empatia": null,
+   "se_recupero": false
+  },
+  {
+   "id": "m1",
+   "tipo": "molesto",
+   "pregunta": "Esto no sirve para nada, ya te pregunté y no me respondes. Quiero hablar con una persona.",
+   "respuesta": "Entiendo tu frustración. He transferido tu caso a un analista humano; el número de caso es ESC-747422. Un especialista te contactará pronto.",
+   "herramientas": [
+    "escalar_a_humano"
+   ],
+   "estados": [
+    "ok"
+   ],
+   "pasos": [
+    {
+     "n": 1,
+     "herramienta": "escalar_a_humano",
+     "args": {
+      "motivo": "frustracion",
+      "pendiente": "El usuario quiere hablar con una persona",
+      "resumen": "El usuario solicita ser transferido a un analista humano por frustración"
+     },
+     "estado": "ok",
+     "resultado": "\"ESC-747422\""
+    }
+   ],
+   "latencia_primer_token": 1.35,
+   "modelo_real": "openai/gpt-oss-120b",
+   "ok": true,
+   "criterio": "escala a humano",
+   "herramienta_ok": null,
+   "empatia": true,
    "se_recupero": false
   }
  ]
