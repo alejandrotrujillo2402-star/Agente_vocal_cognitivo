@@ -214,25 +214,14 @@ select:focus,.campo:focus{border-color:var(--acc)}
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Transcripción
             </button>
             <label class="toggle"><input type="checkbox" id="interrupciones" checked>Permitir interrupciones</label>
-<<<<<<< HEAD
             <label class="toggle" title="Con audífonos el micrófono no oye al agente: cualquier voz puede interrumpirlo"><input type="checkbox" id="audifonos">Uso audífonos</label>
-=======
-            <label class="toggle"><input type="checkbox" id="audifonos">Uso audífonos</label>
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
           </div>
           <div class="aviso err" id="avisoVoz" style="display:none"></div>
         </div>
       </div>
       <div class="metricas">
-<<<<<<< HEAD
         <span>Latencia: <b id="mLat">fin de turno → primer token — → primer audio —</b></span>
         <span>Promedio primer audio: <b id="mLatProm">—</b></span>
-=======
-        <span>Latencia última respuesta: <b id="mLat">—</b></span>
-        <span>Promedio: <b id="mLatProm">—</b></span>
-        <span>Desglose: <b id="mDesg">—</b></span>
-        <span>Interrupción: <b id="mBarge">—</b></span>
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
         <span>Hablantes detectados: <b id="mHab">0</b></span>
         <span>Intervenciones: <b id="mInt">0</b></span>
       </div>
@@ -305,7 +294,6 @@ const RE_INTERROG = /(^|[^\p{L}])(qué|cuánt[oa]s?|cuál(es)?|dónde|cómo|qui�
 
 const S = {
   sesion: (() => { try { let s = sessionStorage.getItem("sid"); if (!s) { s = crypto.randomUUID(); sessionStorage.setItem("sid", s); } return s; } catch { return crypto.randomUUID(); } })(),
-<<<<<<< HEAD
   salud: {}, doc: null, conversando: false, ws: null, rec: null, stream: null, reco: null, keep: null, nivel: null,
   inicio: 0, offset: 0, hablantes: {}, historial: [], analisis: [], lineas: [], interim: null, lineaAgente: null,
   // turno del usuario
@@ -316,25 +304,7 @@ const S = {
   tramos: [], ecoTexto: "", ecoHasta: 0, ecoSuave: 0, rellenos: null, nRelleno: 0, latencias: [],
   // Deepgram
   dgFallo: "", avisoDG: "", wsFallos: 0,
-=======
-  salud: {}, doc: null, conversando: false, ws: null, rec: null, stream: null, reco: null,
-  inicio: 0, offset: 0, turno: [], hablantes: {}, historial: [], analisis: [], lineas: [],
-  hablando: false, pensando: false, textoHablado: "", cola: [], actual: null, abort: null,
-  latencias: [], interim: null, lineaAgente: null, keep: null, nivel: null,
-  tFin: null, ultimaVoz: 0, interimTxt: "", interimSpeaker: 0, preguntaEnCurso: "", pausa: false,
-  finHabla: 0, vozNavegador: false, intervalos: [], audioTurno: false, rellenoTurno: false, relleno: [], lat: null,
-  ecoHist: [], ecoSpeaker: null, energia: {item: null, base: [], t0: 0, sobre: 0, posible: null, inicio: null},
-  ducking: false, solape: null, an: null, anBuf: null, tEnergia: null, ultimaLinea: null, fragmento: null,
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 };
-
-const SILENCIO = /\b(callate|callado|callada|silencio|para ya|detente|deja de hablar|no hables|espera|stop|shh)\b/;
-const CORTE = /\b(para|espera|oye|un momento|no no|callate|silencio|stop|detente|ya|basta)\b/;
-const INTERROGATIVA = /(^|[^\p{L}])(qué|cuánt[oa]s?|cuál(es)?|dónde|cómo|quién(es)?|cuándo)(?!\p{L})/u;
-const INTERROGATIVA_SIN_TILDE = /\b(cuant[oa]s?|cual(es)?|donde|quien(es)?|cuando)\b/;
-const SOCIAL = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|que tal|hey|saludos|gracias|muchas gracias|mil gracias|chao|adios|hasta luego|hasta pronto|nos vemos|bye|como estas|como te encuentras|como te sientes|como vas|quien eres|estas|estas ahi|sigues ahi|me escuchas|me oyes)\b/;
-const RELLENOS = ["Déjame revisar.", "Un momento, lo consulto."];
-const SALUDO = "Hola, ¿en qué puedo ayudarte?";
 
 /* ---------- utilidades ---------- */
 function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("ver"); clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove("ver"), 3500); }
@@ -343,7 +313,6 @@ function reloj() { const s = S.inicio ? Math.max(0, (performance.now() - S.inici
 function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
 function norm(t) { return t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ñ ]/g, " ").split(/\s+/).filter(w => w.length > 2); }
 function esc(t) { return String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-<<<<<<< HEAD
 function sinTildes(t) { return String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
 function palabras(t) { return String(t || "").split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length; }
 function conContenido(t) { return /[\p{L}\p{N}]/u.test(t || ""); }
@@ -361,56 +330,14 @@ function estado(modo, sub) {
     pensando:"Buscando en el documento…", hablando:"Respondiendo con base en el documento."}[modo];
 }
 function estadoReposo() { if (S.hablando || S.pensando) return; estado(S.conversando ? (S.pausa ? "pausa" : "escuchando") : "inactivo"); }
-=======
-function normTxt(t) { return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); }
-function nPalabras(t) { return normTxt(t).split(" ").filter(Boolean).length; }
-function esPregunta(t) { return String(t).includes("?") || INTERROGATIVA.test(String(t).toLowerCase()) || INTERROGATIVA_SIN_TILDE.test(normTxt(t)); }
-function esSilencio(t) { return SILENCIO.test(normTxt(t)) && (!esPregunta(t) || nPalabras(t) <= 5); }
-function esInutil(t) { return nPalabras(t) < 3 && !esPregunta(t) && !SOCIAL.test(normTxt(t)); }
-/* frase que termina en conector, artículo, preposición o muletilla: el usuario está pensando, no terminó */
-const ABIERTA = /(^| )(y|o|u|e|ni|pero|de|del|la|las|el|los|lo|un|una|unos|unas|en|a|al|con|por|para|que|cual|cuales|cuanto|cuantos|cuanta|cuantas|cuentas|donde|como|cuando|quien|quiero|queria|quisiera|saber|digas|dime|decirme|me|te|se|mi|tu|su|sus|hay|son|es|esta|estan|mas|menos|entre|sobre|desde|hasta|segun|bueno|pues|entonces|este|osea|eh|em|mm)$/;
-function pareceIncompleto(t) { const s = String(t).trim(); return !!s && !/\?\s*$/.test(s) && ABIERTA.test(normTxt(s)); }
-/* errores frecuentes del STT con la sigla del dataset */
-function corregirSTT(t) {
-  return String(t).replace(/\b[yi] ?pe[csz]es\b|\bipes\b|\bi\.? ?p\.? ?s\b\.?/gi, "IPS")
-    .replace(/\bcuentas (IPS|sedes|camas|prestadores)\b/gi, "cuántas $1").replace(/\bcuentos (prestadores)\b/gi, "cuántos $1");
-}
-function tiempoSesion() { return S.inicio ? (performance.now() - S.inicio) / 1000 : 0; }
-function bargeIn() { return $("interrupciones").checked; }
-function audifonos() { return $("audifonos").checked; }
-function minPalabras() { return S.vozNavegador ? 3 : 2; }
-function enEspera() { return S.hablando || performance.now() < S.finHabla + 800; }
-function enIntervaloAgente(t) { return S.intervalos.some(([a, b]) => t >= a && t <= (b ?? Infinity)); }
-function cerrarIntervalo() { const u = S.intervalos[S.intervalos.length - 1]; if (u && u[1] == null) u[1] = tiempoSesion() + 0.3; }
-
-function estado(modo, sub) {
-  const o = $("orbe"); o.className = "orbe " + (modo === "pausa" ? "inactivo" : modo);
-  const t = {inactivo:"Listo para conversar", escuchando: S.turno.length || S.interimTxt ? "Escuchando…" : "Escuchando", pensando:"Pensando",
-    hablando: bargeIn() ? "Hablando" : "Hablando (micrófono en espera)", pausa:"En pausa"}[modo];
-  $("estado").textContent = t;
-  if (sub !== undefined) $("estadoSub").textContent = sub;
-  else $("estadoSub").textContent = {inactivo: S.doc ? "Pulsa Iniciar conversación y habla con naturalidad." : "Cargando datos de datos.gov.co…",
-    escuchando:"Haz tu pregunta en voz alta; respondo cuando termines de hablar.",
-    pensando:"Buscando en el documento…",
-    hablando: bargeIn() ? "Respondiendo. Puedes interrumpirme hablando." : "Respondiendo. Para interrumpir di «cállate» o pulsa Callar.",
-    pausa:"Haz una pregunta para continuar."}[modo];
-}
-function estadoReposo() { if (S.hablando || S.pensando) return; estado(S.conversando ? (S.pausa ? "pausa" : "escuchando") : "inactivo"); }
-function avisoVoz(t) { const a = $("avisoVoz"); a.style.display = t ? "" : "none"; a.innerHTML = t ? "<span>" + esc(t) + "</span>" : ""; }
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 
 /* ---------- salud ---------- */
-async function cargarSalud(intento = 0) {
+async function cargarSalud() {
   try {
     S.salud = await (await fetch("/health")).json();
     if (!S.dgFallo) chip("chipStt", S.salud.stt ? "Voz: Deepgram (diarización)" : "Voz: navegador", S.salud.stt ? "ok" : "warn");
     chip("chipLlm", S.salud.llm ? "Modelo: " + S.salud.modelo.split("/").pop() : "Modelo sin clave", S.salud.llm ? "ok" : "err");
-    if (!S.salud.stt) avisoVoz((S.salud.stt_motivo || "Deepgram no está disponible") + ". Uso el reconocimiento del navegador, sin diarización.");
-    else if (S.salud.stt_error) avisoVoz(`Último fallo de Deepgram (${S.salud.stt_error_hora || ""}): ${S.salud.stt_error}`);
-  } catch {
-    chip("chipLlm", "Servidor no disponible", "err");
-    if (intento < 5) setTimeout(() => cargarSalud(intento + 1), 2000);
-  }
+  } catch { chip("chipLlm", "Servidor no disponible", "err"); }
 }
 
 /* ---------- fuente: API datos.gov.co ---------- */
@@ -434,7 +361,6 @@ async function cargarFuente(intento = 0) {
   try { pintarBrief(await (await fetch("/api/brief?" + sesionQS())).json()); } catch {}
 }
 
-<<<<<<< HEAD
 function pintarFuente(e) {
   const stat = (v, n) => `<div class="stat"><b>${esc(v)}</b><small>${n}</small></div>`;
   const api = e.tipo === "api", doc = e.tipo === "documento";
@@ -526,23 +452,6 @@ function saludar() {
   agregarLinea("agente", SALUDO_INICIAL, {canal: "saludo"});
   S.esperaRespuesta = false;
   hablar(SALUDO_INICIAL);
-=======
-function saludar() {
-  S.presentado = true;
-  if (!S.inicio) S.inicio = performance.now();
-  agregarLinea("agente", SALUDO, {canal: "saludo"});
-  hablar(SALUDO);
-}
-
-function leerBrief() {
-  if (!S.doc) return;
-  const texto = S.doc.brief.resumen;
-  if (!S.inicio) S.inicio = performance.now();
-  interrumpir(true);
-  const l = agregarLinea("agente", texto, {canal: "brief"});
-  hablar(texto);
-  analizar(l, "Agente", texto);
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 }
 
 /* ---------- transcripción ---------- */
@@ -565,24 +474,14 @@ function agregarLinea(h, texto, op = {}) {
   div.querySelector(".texto").textContent = texto;
   $("trans").appendChild(div);
   $("trans").scrollTop = $("trans").scrollHeight;
-<<<<<<< HEAD
   if (!op.interim && !op.sistema) { S.lineas.push({t, quien: e.nombre, el: div}); $("mInt").textContent = S.lineas.length; }
-=======
-  if (!op.interim && h !== "sistema") { S.lineas.push({t, quien: e.nombre, el: div}); $("mInt").textContent = S.lineas.length; }
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   return div;
 }
 
 function quitarLinea(el) {
   if (!el) return;
   el.remove();
-<<<<<<< HEAD
   S.lineas = S.lineas.filter(l => l.el !== el); $("mInt").textContent = S.lineas.length;
-=======
-  S.lineas = S.lineas.filter(l => l.el !== el);
-  $("mInt").textContent = S.lineas.length;
-  if (S.lineaAgente === el) S.lineaAgente = null;
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 }
 
 function mostrarInterim(h, texto) {
@@ -598,7 +497,6 @@ async function iniciar() {
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
   } catch { toast("Permite el acceso al micrófono para conversar por voz."); return; }
-<<<<<<< HEAD
   if (!("stt" in S.salud)) await cargarSalud();
   S.conversando = true; S.pausa = false; S.turno = []; S.interimTxt = "";
   if (!S.inicio) S.inicio = performance.now();
@@ -612,79 +510,32 @@ async function iniciar() {
     chip("chipStt", "Voz: Deepgram (diarización)", "ok");
     conectarDeepgram();
   } else iniciarNavegador();
-=======
-  S.conversando = true; S.pausa = false;
-  if (!S.inicio) S.inicio = performance.now();
-  $("btnMic").classList.add("on"); $("btnMic").querySelector("span").textContent = "Terminar conversación";
-  medirNivel();
-  precargarRelleno();
-  if (!S.presentado) saludar();
-  if (S.salud.stt) conectarDeepgram(); else iniciarNavegador();
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   estadoReposo();
 }
 
 function detener() {
   S.conversando = false;
-<<<<<<< HEAD
   interrumpir();
   clearTimeout(S.tFin); S.tFin = null; S.turno = []; S.interimTxt = ""; S.turnoEnviado = null; S.pausa = false;
   cerrarDeepgram();
   pararNavegador();
   S.stream?.getTracks().forEach(t => t.stop()); S.stream = null;
   S.nivel?.close?.(); S.nivel = null;
-=======
-  interrumpir(true);
-  clearTimeout(S.tFin); S.tFin = null;
-  S.turno = []; S.interimTxt = ""; S.pausa = false; S.fragmento = null; S.ultimaLinea = null;
-  quitarInterim();
-  cerrarDeepgram();
-  try { S.reco?.abort(); } catch {}
-  S.reco = null;
-  S.stream?.getTracks().forEach(t => t.stop()); S.stream = null;
-  clearInterval(S.tEnergia); S.tEnergia = null; duck(false);
-  S.nivel?.close?.(); S.nivel = null; S.an = null;
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   $("nucleo").style.transform = "";
   $("btnMic").classList.remove("on"); $("btnMic").querySelector("span").textContent = "Iniciar conversación";
+  quitarInterim();
   estadoReposo();
 }
 
-<<<<<<< HEAD
 /* Deepgram con diarización (vía /ws/stt) */
-=======
-function cerrarDeepgram() {
-  const ws = S.ws; S.ws = null;
-  clearInterval(S.keep); S.keep = null;
-  try { if (S.rec && S.rec.state !== "inactive") S.rec.stop(); } catch {}
-  S.rec = null;
-  try { ws?.close(); } catch {}
-}
-
-function falloDeepgram(motivo) {
-  cerrarDeepgram();
-  S.salud.stt = false;
-  avisoVoz(`Deepgram falló: ${motivo}. Uso el reconocimiento del navegador, sin diarización.`);
-  const corto = motivo.length > 40 ? motivo.slice(0, 40) + "…" : motivo;
-  chip("chipStt", esc(`Voz: navegador (Deepgram falló: ${corto})`), "warn");
-  $("chipStt").title = motivo;
-  if (S.conversando) iniciarNavegador();
-}
-
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 function conectarDeepgram() {
   cerrarDeepgram();
   const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/stt");
   S.ws = ws;
   let abierto = 0;
   ws.onopen = () => {
-<<<<<<< HEAD
     if (S.ws !== ws) return;
     abierto = performance.now();
-=======
-    if (S.ws !== ws || !S.conversando) { try { ws.close(); } catch {} return; }
-    S.offset = (performance.now() - S.inicio) / 1000;
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
     const tipo = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(t => MediaRecorder.isTypeSupported(t));
     S.rec = new MediaRecorder(S.stream, tipo ? {mimeType: tipo} : undefined);
     S.rec.ondataavailable = e => { if (e.data.size && ws.readyState === 1) ws.send(e.data); };
@@ -693,7 +544,6 @@ function conectarDeepgram() {
     clearInterval(S.keep);
     S.keep = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({type: "KeepAlive"})); }, 8000);
   };
-<<<<<<< HEAD
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } try { manejarDG(m, ws); } catch (err) { console.error(err); } };
   ws.onclose = () => {
     if (S.ws !== ws) return;   // cerrado a propósito
@@ -725,21 +575,6 @@ function falloDeepgram(motivo) {
   chip("chipStt", esc(`Voz: navegador (Deepgram falló: ${corto})`), "err");
   avisoVoz(`Deepgram no está disponible: ${S.dgFallo}. Sigo con el reconocimiento de voz del navegador (sin diarización).`);
   if (S.conversando) iniciarNavegador();
-=======
-  ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } manejarDG(m, ws); };
-  ws.onclose = () => {
-    if (S.ws !== ws) return;
-    try { if (S.rec && S.rec.state !== "inactive") S.rec.stop(); } catch {}
-    if (S.conversando) setTimeout(() => { if (S.conversando && S.ws === ws) conectarDeepgram(); }, 800);
-  };
-}
-
-function speakerMayoritario(palabras) {
-  const c = {};
-  for (const w of palabras) if (w.speaker != null) c[w.speaker] = (c[w.speaker] || 0) + 1;
-  const k = Object.keys(c).sort((a, b) => c[b] - c[a])[0];
-  return k == null ? null : Number(k);
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 }
 
 function segmentos(palabras) {
@@ -812,7 +647,6 @@ function duplex() { return $("interrupciones").checked && $("audifonos").checked
 function agenteSuena() { return S.hablando || performance.now() < S.ecoHasta; }
 function enVozAgente(t) { return S.tramos.some(x => t >= x.ini && t <= (x.fin ?? Infinity) + ECO_AUDIO_MS); }
 
-<<<<<<< HEAD
 function esEco(texto) {
   if (!S.hablando && !S.pensando && performance.now() > S.ecoSuave) return false;
   const p = norm(texto); if (!p.length) return true;
@@ -867,169 +701,10 @@ function programarCierre(ms, reiniciar) {
   const en = performance.now() + ms;
   if (!reiniciar && S.tFin && S.cierreEn <= en) return;   // adelantar nunca retrasa
   clearTimeout(S.tFin); S.cierreEn = en; S.tFin = setTimeout(cerrarTurno, ms);
-=======
-/* ---------- interrupción por voz: separar al usuario del eco del agente ---------- */
-function textoAgenteReciente() {
-  const ahora = performance.now();
-  S.ecoHist = S.ecoHist.filter(e => ahora - e.t < 10000);
-  return S.ecoHist.map(e => e.texto).join(" ") + " " + S.textoHablado;
-}
-
-function ratioEco(texto) {
-  const p = norm(texto); if (!p.length) return 1;
-  const ref = new Set(norm(textoAgenteReciente()));
-  return p.filter(w => ref.has(w)).length / p.length;
-}
-
-/* frases cortas: el eco reproduce pares de palabras seguidas del agente; una palabra suelta compartida
-   ("¿y en Manizales?" después de que el agente dijo "Manizales") no basta para llamarlo eco */
-function ratioPares(texto) {
-  const pares = t => { const w = normTxt(t).split(" ").filter(Boolean); return w.slice(1).map((x, i) => w[i] + " " + x); };
-  const p = pares(texto); if (!p.length) return 1;
-  const ref = new Set(pares(textoAgenteReciente()));
-  return p.filter(x => ref.has(x)).length / p.length;
-}
-
-function clasificar(texto, speaker) {
-  const ratio = ratioEco(texto);
-  if (ratio < 0.6) return "usuario";
-  const conocido = S.ecoSpeaker != null && speaker != null;
-  if (conocido && speaker !== S.ecoSpeaker && ratio < 0.85) return "usuario";
-  if (norm(texto).length <= 2 && !(conocido && speaker === S.ecoSpeaker) && ratioPares(texto) < 0.67) return "usuario";
-  if (speaker != null && ratio >= 0.8) S.ecoSpeaker = speaker;
-  return "eco";
-}
-
-/* capa 1: palabra de corte que el agente no acaba de decir (si la dijo, puede ser su propio eco) */
-function esCorte(texto) {
-  const t = normTxt(texto), m = t.match(CORTE) || t.match(SILENCIO);
-  if (!m) return false;
-  return !(" " + normTxt(textoAgenteReciente()) + " ").includes(" " + m[0] + " ");
-}
-
-/* Con el agente sonando decide si lo que llega es el usuario (y entonces corta) o eco. */
-function evaluarBargeIn(texto, speaker, inicio) {
-  if (esCorte(texto)) return interrumpirPorVoz(inicio);
-  // durante la frase de relleno el usuario puede seguir completando su pregunta aunque no se permitan interrupciones
-  if (!bargeIn() && S.audioTurno) return "ignorar";
-  if (audifonos()) return nPalabras(texto) >= 2 ? interrumpirPorVoz(inicio) : "ignorar";
-  if (clasificar(texto, speaker) === "eco") return "ignorar";
-  return nPalabras(texto) >= minPalabras() ? interrumpirPorVoz(inicio) : "ignorar";
-}
-
-function interrumpirPorVoz(inicio) {
-  const ahora = tiempoSesion();
-  const t0 = Math.min(ahora, S.energia.inicio ?? inicio ?? ahora);
-  const u = S.intervalos[S.intervalos.length - 1];
-  if (u && u[1] == null) u[1] = t0;
-  S.solape = [t0, ahora + 0.3];
-  // si solo sonó el relleno, la pregunta seguía incompleta: se descarta esa respuesta y se une con lo nuevo
-  if (S.audioTurno) interrumpir(); else cancelarPensando();
-  S.finHabla = 0;
-  duck(false); S.energia.posible = null; S.energia.inicio = null;
-  $("mBarge").textContent = Math.round((ahora - t0) * 1000) + " ms";
-  return "usuario";
-}
-
-/* Con Deepgram la cola de eco se filtra por la marca de tiempo de cada palabra; el navegador no da marcas,
-   así que ahí, durante 800 ms después de que el agente calla, se descarta lo que parece eco. */
-function filtrarEntrada(texto, conMarcas, speaker = null, inicio = null) {
-  if (!S.conversando) return "ignorar";
-  if (S.hablando) return evaluarBargeIn(texto, speaker, inicio) === "usuario" ? "aceptar" : "ignorar";
-  if (!conMarcas && enEspera() && !esCorte(texto)) {
-    if (!bargeIn()) return "ignorar";
-    if (!audifonos() && clasificar(texto, null) === "eco") return "ignorar";
-  }
-  return "aceptar";
-}
-
-function textoTurno() { return [...S.turno.map(s => s.texto), S.interimTxt].join(" ").trim(); }
-function textoNuevo(segs = S.turno) { return segs.filter(s => !s.reinyectada).map(s => s.texto).join(" ").trim(); }
-
-function usuarioHabla() {
-  S.ultimaVoz = performance.now();
-  if (!S.hablando && !S.audioTurno && (S.pensando || S.actual || S.cola.length)) cancelarPensando();
-}
-
-/* el usuario siguió hablando antes del primer audio: se descarta esa respuesta y se espera el turno completo */
-function cancelarPensando() {
-  const linea = S.lineaAgente, pregunta = S.preguntaEnCurso;
-  interrumpir(true);
-  quitarLinea(linea);
-  S.preguntaEnCurso = "";
-  if (pregunta) S.turno.unshift({speaker: null, texto: pregunta, inicio: null, reinyectada: true});
-}
-
-function mostrarEscucha(speaker) {
-  const nuevo = (textoNuevo() + " " + S.interimTxt).trim();
-  if (nuevo) mostrarInterim(speaker, "(escuchando…) " + nuevo);
-  if (!S.hablando && !S.pensando) estado("escuchando");
-}
-
-function programarFinTurno() {
-  clearTimeout(S.tFin);
-  const t = textoTurno();
-  S.tFin = setTimeout(cerrarTurno, /\?\s*$/.test(t) ? 400 : pareceIncompleto(t) ? 2200 : 900);
-}
-
-/* speech_final / UtteranceEnd: cierran antes solo si ya hay 600 ms o más de silencio tras la última palabra */
-function adelantarCierre() {
-  if (!S.turno.length && !S.interimTxt) return;
-  if (pareceIncompleto(textoTurno())) return;
-  const silencio = S.ws && S.finPalabra != null ? (tiempoSesion() - S.finPalabra) * 1000 : performance.now() - S.ultimaVoz;
-  if (silencio >= 600) cerrarTurno();
-}
-
-function recibirVoz(texto, final, segs, speaker) {
-  usuarioHabla();
-  texto = corregirSTT(texto);
-  segs = segs.map(s => ({...s, texto: corregirSTT(s.texto)}));
-  if (!final) {
-    S.interimTxt = texto; S.interimSpeaker = speaker;
-    mostrarEscucha(speaker); programarFinTurno();
-    return;
-  }
-  S.interimTxt = "";
-  S.turno.push(...segs);
-  if (esSilencio(textoNuevo())) return cerrarTurno();
-  mostrarEscucha(speaker); programarFinTurno();
-}
-
-function manejarDG(m, ws) {
-  if (!S.conversando || S.ws !== ws) return;
-  if (m.type === "Error") return falloDeepgram(m.description || m.message || "error desconocido");
-  if (m.type === "UtteranceEnd") return adelantarCierre();
-  if (m.type !== "Results") return;
-  const alt = m.channel?.alternatives?.[0]; if (!alt) return;
-  const texto = (alt.transcript || "").trim();
-  if (!texto) { if (m.speech_final) adelantarCierre(); return; }
-  let palabras = alt.words || [];
-  const speaker = speakerMayoritario(palabras);
-  const propia = palabras.find(w => S.ecoSpeaker == null || w.speaker !== S.ecoSpeaker);
-  if (filtrarEntrada(texto, true, speaker, propia ? S.offset + (propia.start || 0) : null) === "ignorar") return;
-  if (!audifonos()) {
-    // eco que Deepgram entrega tarde: palabras pronunciadas mientras sonaba el agente; en el tramo en que
-    // hablaron los dos se quitan las del speaker del eco (o, si no se conoce, las que dijo el agente)
-    const vocab = new Set(norm(textoAgenteReciente()));
-    palabras = palabras.filter(w => {
-      const t = S.offset + (w.start || 0);
-      if (enIntervaloAgente(t)) return false;
-      if (S.solape && t >= S.solape[0] && t <= S.solape[1])
-        return S.ecoSpeaker != null ? w.speaker !== S.ecoSpeaker : !norm(w.word || "").some(x => vocab.has(x));
-      return true;
-    });
-  }
-  if (!palabras.length) return;
-  S.finPalabra = S.offset + (palabras[palabras.length - 1].end || 0);
-  const segs = segmentos(palabras).map(s => ({...s, inicio: S.offset + (s.inicio || 0)}));
-  recibirVoz(segs.map(s => s.texto).join(" "), m.is_final, segs, segs[0].speaker);
-  if (m.is_final && m.speech_final) adelantarCierre();
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 }
 
 function cerrarTurno() {
   clearTimeout(S.tFin); S.tFin = null;
-<<<<<<< HEAD
   if (!S.conversando) return;
   if (S.interimTxt) {
     // aún falta el resultado final de lo último que se dijo: se espera un poco antes de usar el parcial
@@ -1087,101 +762,6 @@ function pausar() {
 function entrarPausa() {
   if (!S.pausa) { S.pausa = true; agregarLinea("sistema", "Agente en pausa. Haz una pregunta para continuar.", {sistema: true}); }
   estadoReposo();
-=======
-  if (!S.turno.some(s => !s.reinyectada) && S.interimTxt) {
-    // solo hay resultado provisional: se espera el definitivo (hasta 2 s) para no enviar la misma frase dos veces
-    if (performance.now() - S.ultimaVoz < 2000) { S.tFin = setTimeout(cerrarTurno, 400); return; }
-    S.turno.push({speaker: S.interimSpeaker, texto: S.interimTxt, inicio: null});
-  }
-  S.interimTxt = "";
-  quitarInterim();
-  let segs = S.turno; S.turno = [];
-  if (!S.conversando || !segs.length) return estadoReposo();
-
-  // el definitivo repite (o contiene) lo que ya se envió: no se pinta ni se pregunta dos veces
-  const reinyectada = normTxt(segs.filter(s => s.reinyectada).map(s => s.texto).join(" "));
-  const reciente = S.ultimoTurno && performance.now() - S.ultimoTurno.en < 6000;
-  const previa = reinyectada || (reciente ? S.ultimoTurno.t : "");
-  const nuevo = normTxt(textoNuevo(segs));
-  if (nuevo && previa && previa.includes(nuevo)) {
-    segs = segs.filter(s => s.reinyectada);
-    if (!segs.length) return estadoReposo();
-  } else if (nuevo && reinyectada && nuevo.includes(reinyectada)) {
-    segs = segs.filter(s => !s.reinyectada);
-  }
-
-  // la diarización en vivo a veces asigna 1 o 2 palabras sueltas a otro hablante: se unen al hablante principal
-  const conteo = {};
-  for (const s of segs) if (!s.reinyectada) conteo[s.speaker] = (conteo[s.speaker] || 0) + nPalabras(s.texto);
-  const principal = Object.keys(conteo).sort((a, b) => conteo[b] - conteo[a])[0];
-  const grupos = [];
-  for (const s of segs) {
-    if (s.reinyectada) continue;
-    const speaker = conteo[s.speaker] < 3 && principal != null ? segs.find(x => String(x.speaker) === principal).speaker : s.speaker;
-    const u = grupos[grupos.length - 1];
-    if (u && u.speaker === speaker) u.texto += " " + s.texto; else grupos.push({...s, speaker});
-  }
-  // continuación de la frase anterior (respuesta descartada o fragmento sin responder): se escribe en la misma línea
-  const reiny = segs.some(s => s.reinyectada);
-  const frag = !reiny && S.fragmento && performance.now() - S.fragmento.en < 8000 ? S.fragmento : null;
-  S.fragmento = null;
-  const ant = reiny ? S.ultimaLinea : frag;
-  const unir = !!(ant?.el?.isConnected && grupos.length && ant.speaker === grupos[0].speaker);
-  let ultima = null;
-  grupos.forEach((g, i) => {
-    let l = null, txt = g.texto;
-    if (i === 0 && unir) {
-      l = ant.el; const caja = l.querySelector(".texto");
-      caja.textContent = txt = corregirSTT(caja.textContent + " " + g.texto);
-    } else l = agregarLinea(g.speaker, g.texto, {tiempo: g.inicio, canal: "voz"});
-    analizar(l, etiqueta(g.speaker).nombre, txt);
-    ultima = {el: l, speaker: g.speaker};
-  });
-  if (ultima) S.ultimaLinea = ultima;
-  let texto = segs.map(s => s.texto).join(" ").trim();
-  if (frag && unir) texto = frag.texto + " " + texto;
-  texto = corregirSTT(texto);
-  if (!texto) return estadoReposo();
-  if (esSilencio(textoNuevo(segs))) return pausar();
-  if (esInutil(texto) || (S.pausa && !esPregunta(texto))) {
-    if (esInutil(texto) && ultima) S.fragmento = {...ultima, texto, en: performance.now()};
-    return estadoReposo();
-  }
-  S.pausa = false;
-  S.ultimoTurno = {t: normTxt(texto), en: performance.now()};
-  responder(texto);
-}
-
-function pausar() {
-  clearTimeout(S.tFin); S.tFin = null;
-  S.turno = []; S.interimTxt = "";
-  quitarInterim();
-  interrumpir();
-  if (!S.pausa) agregarLinea("sistema", "Agente en pausa. Haz una pregunta para continuar.", {canal: "sistema"});
-  S.pausa = true;
-  estadoReposo();
-}
-
-/* respaldo: reconocimiento del navegador (sin diarización) */
-function iniciarNavegador() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { toast("Este navegador no reconoce voz. Usa Chrome o escribe tu pregunta."); return; }
-  try { S.reco?.abort(); } catch {}
-  const r = new SR(); S.reco = r;
-  r.lang = "es-CO"; r.continuous = true; r.interimResults = true;
-  r.onresult = ev => {
-    if (!S.conversando || S.reco !== r) return;
-    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-      const texto = ev.results[i][0].transcript.trim();
-      if (!texto) continue;
-      if (filtrarEntrada(texto, false) === "ignorar") continue;
-      const final = ev.results[i].isFinal;
-      recibirVoz(texto, final, final ? [{speaker: "nav", texto, inicio: tiempoSesion()}] : [], "nav");
-    }
-  };
-  r.onend = () => { if (S.conversando && S.reco === r) try { r.start(); } catch {} };
-  try { r.start(); } catch {}
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 }
 
 /* nivel del micrófono para animar el orbe */
@@ -1189,48 +769,17 @@ function medirNivel() {
   try {
     const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(S.stream);
     const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an); S.nivel = ctx;
-    S.an = an; S.anBuf = new Uint8Array(an.fftSize);
+    const buf = new Uint8Array(an.fftSize);
     const paso = () => {
       if (!S.nivel) return;
-      if (!S.hablando) $("nucleo").style.transform = `scale(${1 + Math.min(.35, leerRMS() * 3)})`;
+      an.getByteTimeDomainData(buf);
+      let s = 0; for (const v of buf) s += ((v - 128) / 128) ** 2;
+      const rms = Math.sqrt(s / buf.length);
+      if (!S.hablando) $("nucleo").style.transform = `scale(${1 + Math.min(.35, rms * 3)})`;
       requestAnimationFrame(paso);
     };
     paso();
-    clearInterval(S.tEnergia); S.tEnergia = setInterval(vigilarEnergia, 50);
   } catch {}
-}
-
-function leerRMS() {
-  if (!S.an) return 0;
-  S.an.getByteTimeDomainData(S.anBuf);
-  let s = 0; for (const v of S.anBuf) s += ((v - 128) / 128) ** 2;
-  return Math.sqrt(s / S.anBuf.length);
-}
-
-function duck(on) {
-  S.ducking = on;
-  if (S.actual?.audio) S.actual.audio.volume = on ? 0.2 : 1;
-}
-
-/* capa 2: energía del micrófono sobre la línea base del eco de cada frase -> "posible usuario": baja el volumen
-   y espera hasta 1 s a que el texto confirme (capas 3 y 4); si no confirma, vuelve al 100 % */
-function vigilarEnergia() {
-  const e = S.energia, ahora = performance.now();
-  if (!S.hablando || !S.actual || audifonos() || !bargeIn()) {
-    if (S.ducking) duck(false);
-    e.item = null; e.sobre = 0; e.posible = null; e.inicio = null;
-    return;
-  }
-  const rms = leerRMS();
-  if (e.item !== S.actual) { e.item = S.actual; e.base = []; e.t0 = ahora; e.sobre = 0; }
-  if (ahora - e.t0 < 400) { e.base.push(rms); return; }
-  const base = e.base.length ? e.base.reduce((a, b) => a + b, 0) / e.base.length : 0;
-  const umbral = Math.max((S.vozNavegador ? 3.5 : 2.5) * base, 0.04);
-  if (rms > umbral) {
-    if (!e.sobre) e.sobre = ahora;
-    if (!e.posible && ahora - e.sobre >= 250) { e.posible = ahora; e.inicio = tiempoSesion() - (ahora - e.sobre) / 1000; duck(true); }
-  } else e.sobre = 0;
-  if (e.posible && ahora - e.posible > 1000) { e.posible = null; e.inicio = null; duck(false); }
 }
 
 /* ---------- respuesta del agente (streaming + voz por frases) ---------- */
@@ -1239,20 +788,15 @@ function preguntarTexto(t) {
   if (!S.inicio) S.inicio = performance.now();
   const l = agregarLinea("texto", t, {canal: "escrito"});
   analizar(l, etiqueta("texto").nombre, t);
-<<<<<<< HEAD
   if (pideSilencio(t)) return pausar();
   S.pausa = false; S.esperaRespuesta = false; S.turnoEnviado = null;
   S.lat = {t0: performance.now(), token: null, audio: null};
-=======
-  S.pausa = false;
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   responder(t);
 }
 
 async function responder(pregunta) {
   if (!S.doc) { toast("Los datos de datos.gov.co aún se están cargando."); return; }
   interrumpir(true);
-<<<<<<< HEAD
   const ctrl = new AbortController(); S.abort = ctrl;
   const lat = S.lat;
   S.pensando = true; S.sonoRespuesta = false; S.lineaAgente = null; estado("pensando");
@@ -1260,15 +804,6 @@ async function responder(pregunta) {
   let linea = null;
   const burbuja = () => linea || (linea = S.lineaAgente = agregarLinea("agente", ""));
   let completo = "", buffer = "", primera = true, ruta = "", silencio = false, relleno = false;
-=======
-  S.preguntaEnCurso = pregunta; S.audioTurno = false; S.rellenoTurno = false;
-  S.lat = {t0: performance.now(), tok: null, audio: null, relleno: false};
-  const ctrl = new AbortController(); S.abort = ctrl; S.respuesta = ctrl;
-  S.pensando = true; estado("pensando");
-  const linea = agregarLinea("agente", ""); S.lineaAgente = linea;
-  const caja = linea.querySelector(".texto");
-  let completo = "", buffer = "", primera = true, silencio = false;
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   const pasos = [];
   try {
     const r = await fetch("/api/preguntar", {method: "POST", headers: {"Content-Type": "application/json"},
@@ -1283,7 +818,6 @@ async function responder(pregunta) {
         if (!p.trim() || S.abort !== ctrl) continue;
         const ev = JSON.parse(p);
         if (ev.t === "delta") {
-<<<<<<< HEAD
           if (lat && lat.token == null) { lat.token = Math.round(performance.now() - lat.t0); pintarLatencia(lat); }
           completo += ev.x; buffer += ev.x;
           if (conContenido(completo)) { burbuja().querySelector(".texto").textContent = completo; $("trans").scrollTop = $("trans").scrollHeight; }
@@ -1300,35 +834,17 @@ async function responder(pregunta) {
           // el modelo pidió una herramienta: frase de relleno precargada mientras llega la respuesta
           if (!relleno && !conContenido(completo) && !S.sonoRespuesta) { relleno = true; decirRelleno(); }
         } else if (ev.t === "paso") {
-=======
-          if (S.lat && S.lat.tok == null) { S.lat.tok = performance.now() - S.lat.t0; pintarDesglose(); }
-          completo += ev.x; buffer += ev.x; caja.textContent = completo;
-          $("trans").scrollTop = $("trans").scrollHeight;
-          // la primera frase sale a voz en la primera pausa (",;:") con 25 caracteres o más; las demás, al cerrar oración
-          let m;
-          while ((m = primera ? buffer.match(/^([\s\S]{25,}?[,;:.!?])\s+/) : buffer.match(/^([\s\S]+?[.!?])\s+/))) {
-            hablar(m[1].trim()); buffer = buffer.slice(m[0].length); primera = false;
-          }
-        } else if (ev.t === "silencio") { silencio = true; }
-        else if (ev.t === "consultando") decirRelleno();
-        else if (ev.t === "decision") { pasos.length = 0; pasos.push({tipo: "decision", ...ev.x}); pintarDecisiones(pasos, pregunta); }
-        else if (ev.t === "paso") {
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
           pasos.push(ev.x); pintarDecisiones(pasos, pregunta);
           const h = document.createElement("div"); h.className = "herr";
           const etiquetaEstado = {ok: "consulta", error: "corrigiendo", sospechoso: "ajustando"}[ev.x.estado] || ev.x.estado;
           h.innerHTML = `${etiquetaEstado}: <code>${esc(ev.x.herramienta)}</code> <code>${esc(JSON.stringify(ev.x.args)).slice(0, 120)}</code>`;
           burbuja().querySelector(".burbuja").appendChild(h);
         } else if (ev.t === "escalamiento") mostrarEscalamiento(ev.x);
-<<<<<<< HEAD
         else if (ev.t === "silencio") silencio = true;
-=======
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
         else if (ev.t === "fin") { if (!silencio) { pasos.push({tipo: "fin", ...ev.x}); pintarDecisiones(pasos, pregunta); } }
         else if (ev.t === "error") console.warn(ev.x);
       }
     }
-<<<<<<< HEAD
     if (S.abort !== ctrl) return;
     if (silencio) return entrarPausa();
     if (buffer.trim()) hablar(buffer.trim(), {lat});
@@ -1340,21 +856,6 @@ async function responder(pregunta) {
   } finally {
     if (S.abort === ctrl) { S.abort = null; S.pensando = false; }
     if (!S.cola.length && !S.actual) estadoReposo();
-=======
-    if (silencio) { quitarLinea(linea); if (S.respuesta === ctrl) S.pensando = false; pausar(); return; }
-    if (!completo.replace(/[\s\p{P}]/gu, "")) { quitarLinea(linea); return; }
-    if (buffer.trim()) hablar(buffer.trim());
-    analizar(linea, "Agente", completo);
-  } catch (e) {
-    if (e.name !== "AbortError") { caja.textContent = "No pude responder: " + e.message; toast(e.message); }
-    else if (!completo.replace(/[\s\p{P}]/gu, "")) quitarLinea(linea);
-  } finally {
-    if (S.abort === ctrl) S.abort = null;
-    if (S.respuesta === ctrl) {
-      S.respuesta = null; S.pensando = false;
-      if (!S.cola.length && !S.actual) estadoReposo();
-    }
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   }
 }
 
@@ -1376,51 +877,19 @@ function decirRelleno() {
 }
 
 /* cola de voz: cada frase se pide al TTS en paralelo y se reproduce en orden */
-<<<<<<< HEAD
 function hablar(texto, op = {}) {
   texto = String(texto || "").replace(/\s+/g, " ").trim();
   if (!conContenido(texto)) return;   // nunca se lee "..." ni texto vacío
   const item = {texto, audio: null, relleno: !!op.relleno, lat: op.lat || null};
   if (op.url) item.audio = new Audio(op.url);
   else if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; }
-=======
-function hablar(texto) {
-  texto = texto.replace(/\s+/g, " ").trim();
-  if (!/[\p{L}\p{N}]/u.test(texto)) return;
-  const item = {texto, audio: null, relleno: false};
-  if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; }
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   S.cola.push(item);
   if (!S.actual) siguiente();
-}
-
-/* frases de relleno: suenan mientras el modelo consulta los datos */
-async function precargarRelleno() {
-  if (!S.salud.tts || S.relleno.length) return;
-  const audios = await Promise.all(RELLENOS.map(async texto => {
-    try {
-      const r = await fetch("/api/tts?texto=" + encodeURIComponent(texto));
-      return r.ok ? {texto, url: URL.createObjectURL(await r.blob())} : null;
-    } catch { return null; }
-  }));
-  S.relleno = audios.filter(Boolean);
-}
-
-function decirRelleno() {
-  if (S.audioTurno || S.rellenoTurno || S.actual || S.cola.length) return;
-  S.rellenoTurno = true;
-  const pre = S.relleno.length ? S.relleno[Math.floor(Math.random() * S.relleno.length)] : null;
-  const texto = pre ? pre.texto : RELLENOS[Math.floor(Math.random() * RELLENOS.length)];
-  const item = {texto, audio: pre ? new Audio(pre.url) : null, relleno: true};
-  if (!pre && S.salud.tts) item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto));
-  S.cola.push(item);
-  siguiente();
 }
 
 function siguiente() {
   const it = S.cola.shift();
   S.actual = it || null;
-<<<<<<< HEAD
   if (!it) { if (S.hablando) finVoz(); S.textoHablado = ""; $("nucleo").style.transform = ""; estadoReposo(); return; }
   if (!S.hablando) { S.tramos.push({ini: performance.now(), fin: null}); if (S.tramos.length > 20) S.tramos.shift(); }
   S.hablando = true; S.sonoRespuesta = true; S.vozNav = !it.audio;
@@ -1443,42 +912,10 @@ function finVoz() {
 }
 
 function hablarNavegador(texto, fin, inicio) {
-=======
-  if (!it) {
-    if (S.hablando) { S.finHabla = performance.now(); cerrarIntervalo(); }
-    S.hablando = false; S.textoHablado = ""; $("nucleo").style.transform = ""; estadoReposo(); return;
-  }
-  S.textoHablado = it.texto;
-  const fin = () => { if (S.actual === it) siguiente(); };
-  const suena = () => empezoAudio(it);
-  const respaldo = () => { if (S.actual !== it) return; it.audio = null; hablarNavegador(it.texto, fin, suena); };
-  if (it.audio) {
-    it.audio.onplaying = suena;
-    it.audio.onended = fin;
-    it.audio.onerror = respaldo;
-    it.audio.play().catch(respaldo);
-  } else hablarNavegador(it.texto, fin, suena);
-}
-
-/* el micrófono pasa a espera solo cuando el audio suena de verdad, no mientras se descarga el TTS */
-function empezoAudio(it) {
-  if (S.actual !== it) return;
-  if (!S.hablando) { S.intervalos.push([tiempoSesion() - 0.1, null]); S.intervalos = S.intervalos.slice(-30); }
-  S.hablando = true; S.vozNavegador = !it.audio;
-  S.ecoHist.push({t: performance.now(), texto: it.texto});
-  if (it.audio) it.audio.volume = S.ducking ? 0.2 : 1;
-  quitarInterim();
-  estado("hablando");
-  marcarAudio(it.relleno);
-}
-
-function hablarNavegador(texto, fin, alEmpezar) {
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   if (!window.speechSynthesis) return fin();
   const u = new SpeechSynthesisUtterance(texto); u.lang = "es-CO"; u.rate = 1.05;
   const voces = speechSynthesis.getVoices();
   u.voice = voces.find(v => /es[-_](CO|MX|US|419)/i.test(v.lang) && /google|natural|online/i.test(v.name)) || voces.find(v => /^es/i.test(v.lang)) || null;
-<<<<<<< HEAD
   u.onstart = inicio; u.onend = fin; u.onerror = fin;
   speechSynthesis.speak(u);
 }
@@ -1495,44 +932,17 @@ function pintarLatencia(l) {
   const ms = v => v == null ? "…" : fmtN(v) + " ms";
   $("mLat").textContent = `fin de turno → primer token ${ms(l.token)} → primer audio ${ms(l.audio)}`;
   if (S.latencias.length) $("mLatProm").textContent = fmtN(Math.round(S.latencias.reduce((a, b) => a + b, 0) / S.latencias.length)) + " ms";
-=======
-  u.onstart = alEmpezar; u.onend = fin; u.onerror = fin;
-  speechSynthesis.speak(u);
-}
-
-function marcarAudio(relleno) {
-  if (!relleno) S.audioTurno = true;
-  if (!S.lat || S.lat.audio != null) return;
-  S.lat.audio = performance.now() - S.lat.t0; S.lat.relleno = !!relleno;
-  S.latencias.push(S.lat.audio);
-  $("mLat").textContent = (S.lat.audio / 1000).toFixed(2) + " s";
-  $("mLatProm").textContent = (S.latencias.reduce((a, b) => a + b, 0) / S.latencias.length / 1000).toFixed(2) + " s";
-  pintarDesglose();
-}
-
-function pintarDesglose() {
-  const l = S.lat; if (!l) return;
-  const ms = v => v == null ? "—" : Math.round(v) + " ms";
-  $("mDesg").textContent = `fin de turno → primer token ${ms(l.tok)} → primer audio ${ms(l.audio)}${l.relleno ? " (relleno)" : ""}`;
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 }
 
 function interrumpir(silencioso) {
-  const habia = S.hablando || S.pensando, hablaba = S.hablando;
+  const habia = S.hablando || S.pensando;
   S.abort?.abort(); S.abort = null;
   for (const it of [S.actual, ...S.cola]) if (it?.audio) { it.audio.onended = it.audio.onerror = it.audio.onplaying = null; it.audio.pause(); it.audio.removeAttribute("src"); it.audio.load(); }
   S.cola = []; S.actual = null;
   try { speechSynthesis.cancel(); } catch {}
   if (habia && S.lineaAgente && !silencioso) S.lineaAgente.classList.add("interrumpida");
-<<<<<<< HEAD
   if (S.hablando) finVoz();
   S.pensando = false; S.textoHablado = "";
-=======
-  if (hablaba) { S.finHabla = performance.now(); cerrarIntervalo(); }
-  S.ducking = false; S.energia.posible = null; S.energia.inicio = null;
-  S.hablando = false; S.pensando = false; S.textoHablado = "";
-  $("nucleo").style.transform = "";
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
   estadoReposo();
 }
 
@@ -1591,14 +1001,9 @@ function pintarPanel() {
 function pintarDecisiones(pasos, pregunta) {
   const html = pasos.map((p, i) => {
     if (p.tipo === "decision") {
-<<<<<<< HEAD
       const ruta = {social: "Charla social → modelo rápido, sin herramientas", "instantánea": "Respuesta instantánea → plantilla, sin modelo"}[p.ruta]
         || (p.fuente_tipo === "documento" ? "Consulta del documento → modelo con herramientas" : "Consulta de datos → modelo con herramientas");
       return `<div class="paso decision"><span class="n">R</span><div><b>${ruta}</b><small>${p.fuente_tipo && p.fuente_tipo !== "api" ? "Fuente: " + esc(p.fuente) + " · " : ""}Modelo: ${esc(p.modelo)} · Emoción: ${esc(p.emocion)}${p.escalar ? " · <b style='color:var(--neg)'>Escalar: " + esc(p.escalar) + "</b>" : ""}${Object.keys(p.contexto || {}).length ? "<br>Contexto activo: " + esc(Object.entries(p.contexto).map(([k, v]) => k + "=" + v).join(", ")) : ""}</small></div></div>`;
-=======
-      const ruta = p.ruta === "instantánea" ? "Respuesta instantánea → plantilla, sin modelo" : "Consulta de datos → modelo con herramientas";
-      return `<div class="paso decision"><span class="n">R</span><div><b>${ruta}</b><small>Modelo: ${esc(p.modelo)} · Emoción: ${esc(p.emocion)}${p.escalar ? " · <b style='color:var(--neg)'>Escalar: " + esc(p.escalar) + "</b>" : ""}${Object.keys(p.contexto || {}).length ? "<br>Contexto activo: " + esc(Object.entries(p.contexto).map(([k, v]) => k + "=" + v).join(", ")) : ""}</small></div></div>`;
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
     }
     if (p.tipo === "fin") return `<div class="paso"><span class="n">✓</span><div><b>Respuesta en ${(p.ms_total / 1000).toFixed(2)} s</b><small>Primer token ${(p.ms_primer_token / 1000).toFixed(2)} s · modelo real ${esc(p.modelo)} · ${p.consultas} consultas, ${p.exitos} válidas${p.fallos_seguidos ? " · turnos sin respuesta: " + p.fallos_seguidos : ""}</small></div></div>`;
     const accion = {ok: "Resultado válido", error: "Valor no encontrado → se corrige", sospechoso: "Resultado sospechoso → ajusta filtro"}[p.estado] || p.estado;
@@ -1627,13 +1032,9 @@ function exportar() {
 $("btnMic").onclick = iniciar;
 $("btnCallar").onclick = () => interrumpir();
 $("btnEscuchar").onclick = leerBrief;
-<<<<<<< HEAD
 $("btnArchivo").onclick = () => $("archivo").click();
 $("archivo").onchange = e => subirArchivo(e.target.files[0]);
 $("btnApi").onclick = volverApi;
-=======
-$("audifonos").onchange = $("interrupciones").onchange = () => { if (S.hablando) estado("hablando"); };
->>>>>>> a9e2bb553b255d7bfdc16cf3136374dc1ba5f051
 $("btnExportar").onclick = exportar;
 $("interrupciones").onchange = $("audifonos").onchange = () => estadoReposo();
 $("formTexto").onsubmit = e => { e.preventDefault(); const t = $("texto").value; $("texto").value = ""; preguntarTexto(t); };
