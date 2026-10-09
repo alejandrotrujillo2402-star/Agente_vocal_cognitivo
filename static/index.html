@@ -353,9 +353,7 @@ svg{flex:none}
 
     <div class="seccion">
       <h3>Voz</h3>
-      <label class="toggle"><input type="checkbox" id="interrupciones" checked>Permitir interrupciones</label>
-      <label class="toggle" title="Con audífonos el micrófono no oye al agente: cualquier voz puede interrumpirlo"><input type="checkbox" id="audifonos">Uso audífonos</label>
-      <div class="chips" style="margin-top:10px">
+      <div class="chips">
         <span class="chip" id="chipStt"><i></i>Voz</span>
         <span class="chip" id="chipLlm"><i></i>Modelo</span>
         <span class="chip" id="chipDoc"><i></i>Cargando datos</span>
@@ -832,7 +830,8 @@ function iniciarNavegador() {
 function pararNavegador() { const r = S.reco; S.reco = null; try { r?.abort(); } catch {} }
 
 /* ---------- toma de turnos ---------- */
-function duplex() { return $("interrupciones").checked && $("audifonos").checked && !!S.salud.tts && !S.vozNav; }
+// Siempre semidúplex (sin opción de audífonos): mientras el agente habla solo cuenta «cállate» / «espera»
+function duplex() { return false; }
 function agenteSuena() { return S.hablando || performance.now() < S.ecoHasta; }
 function enVozAgente(t) { return S.tramos.some(x => t >= x.ini && t <= (x.fin ?? Infinity) + ECO_AUDIO_MS); }
 
@@ -1239,13 +1238,25 @@ function ponerCalma(calma) {
   aplicarTono(calma ? 2 : 3);
 }
 
-/* Tono: color de la emoción dominante de la última intervención del usuario (cian si es neutral o sin datos).
-   En calma manda el tono sereno hsl(188, 22%, 46%). Tiñe orbe, anillos, bordes del chat y brillos. */
+/* Tono regulador: el holograma no refleja la emoción del usuario, responde con el estímulo que ayuda a regularla
+   (color poco saturado, menos brillo y velocidad, respiración que se puede seguir con la vista: ~6 por minuto).
+   Emociones agradables se dejan con su color vivo. Sin señal: cian. En calma (>= 0,6) manda hsl(188, 22%, 46%).
+   resp: [inhalar s, exhalar s, amplitud]; vel y part: factor de giro y de partículas. */
+const REGULA = {
+  enojo:       {color: "hsl(188, 26%, 52%)", txt: "respira conmigo", resp: [5, 6, .045], vel: .45, part: .3},
+  frustracion: {color: "hsl(188, 26%, 52%)", txt: "respira conmigo", resp: [5, 6, .045], vel: .45, part: .3},
+  miedo:       {color: "hsl(210, 45%, 66%)", txt: "respira conmigo", resp: [4, 6, .06], vel: .4, part: .25},
+  tristeza:    {color: "hsl(35, 45%, 64%)",  txt: "calidez", resp: [4, 5, .03], vel: .6, part: .5},
+  confusion:   {color: "hsl(195, 70%, 76%)", txt: "claridad", resp: [3, 3, .02], vel: .5, part: .5, escaneo: 1.6},
+};
+const CALMA = {color: "hsl(188, 22%, 46%)", txt: "respira conmigo", resp: [5, 6, .05], vel: .4, part: .25};
 function aplicarTono(seg = 1.5) {
   const a = S.tono, calma = $("escena").classList.contains("calma");
   const dom = a && a.dominante !== "neutral" && (a.emociones?.[a.dominante] || 0) >= 0.35 ? a.dominante : null;
-  const color = calma ? "hsl(188, 22%, 46%)" : dom ? COLOR_EMO[dom] : "#22d3ee";
-  S.tonoTxt = (dom ? EMOCIONES[dom] : a ? "Neutral" : "Sin datos") + (calma ? " · calma" : "");
+  const reg = calma ? CALMA : REGULA[dom] || null;
+  S.regula = reg;
+  const color = reg ? reg.color : dom ? COLOR_EMO[dom] : "#22d3ee";
+  S.tonoTxt = (dom ? EMOCIONES[dom] : a ? "Neutral" : "Sin datos") + (reg ? " · " + reg.txt : "");
   const r = document.documentElement.style;
   r.setProperty("--emo-t", seg + "s"); r.setProperty("--emo", color);
 }
@@ -1419,16 +1430,18 @@ const Orbe = (() => {
     const R0 = Math.min(zona.width, zona.height) * .3, ox = zona.left + zona.width / 2;
     let oy = zona.top + zona.height * .4;
     if (S.asienteDesde && ahora - S.asienteDesde < 1800) oy += Math.sin(Math.PI * (ahora - S.asienteDesde) / 1800) * R0 * .06 * mov;
-    const periodo = calma ? 11 : 5;   // respiración: 11 s en calma
-    const R = R0 * (1 + .018 * Math.sin(2 * Math.PI * t / periodo) * mov + nivelAg * .05 + nivelMic * .03);
-    const vel = ({reposo: .14, escucha: .2, piensa: .55, habla: .28}[est] || .14) * (calma ? .5 : 1);
+    // respiración: normal 5 s; con tono regulador, ciclo guiado (inhalar más corto que exhalar) más amplio
+    const reg = S.regula, [ins, exh, amp] = reg?.resp || [2.5, 2.5, .018], fase = t % (ins + exh);
+    const resp = fase < ins ? .5 - .5 * Math.cos(Math.PI * fase / ins) : .5 + .5 * Math.cos(Math.PI * (fase - ins) / exh);
+    const R = R0 * (1 + amp * (resp * 2 - 1) * mov + nivelAg * .05 + nivelMic * .03);
+    const vel = ({reposo: .14, escucha: .2, piensa: .55, habla: .28}[est] || .14) * (reg?.vel ?? 1);
     giro += dt * vel * mov;
 
     g.clearRect(0, 0, W, H);
     g.globalCompositeOperation = "lighter";
 
     // partículas lejanas
-    for (const p of fondo) {
+    for (const p of reg ? fondo.slice(0, Math.ceil(fondo.length * reg.part)) : fondo) {
       p.x += p.vx * dt * mov; p.y += p.vy * dt * mov;
       if (p.y < -.02) { p.y = 1.02; p.x = Math.random(); }
       if (p.x < -.02) p.x = 1.02; if (p.x > 1.02) p.x = -.02;
@@ -1438,7 +1451,7 @@ const Orbe = (() => {
 
     // halo
     const halo = g.createRadialGradient(ox, oy, R * .2, ox, oy, R * 2.2);
-    halo.addColorStop(0, rgba(.16 + nivelAg * .18)); halo.addColorStop(.45, rgba(.05)); halo.addColorStop(1, rgba(0));
+    halo.addColorStop(0, rgba((.16 + nivelAg * .18) * (reg ? .55 + .45 * resp : 1)));   // con tono regulador: menos brillo, late con la respiración halo.addColorStop(.45, rgba(.05)); halo.addColorStop(1, rgba(0));
     g.fillStyle = halo; g.beginPath(); g.arc(ox, oy, R * 2.2, 0, 6.283); g.fill();
 
     // cono de luz de la base hacia el orbe
@@ -1477,7 +1490,7 @@ const Orbe = (() => {
       g.stroke();
     }
     // escaneo: línea de luz de arriba abajo, lenta; más rápida al pensar
-    const perEsc = est === "piensa" ? 1.8 : calma ? 9 : 6;
+    const perEsc = (est === "piensa" ? 1.8 : calma ? 9 : 6) * (reg?.escaneo || 1);
     escaneo = (escaneo + dt * mov / perEsc) % 1;
     const yEsc = oy - R * 1.05 + escaneo * R * 2.1;
     g.fillStyle = rgba(1);
@@ -1523,7 +1536,7 @@ const Orbe = (() => {
 
     // estela: partículas que se desprenden del orbe y se disuelven al hablar
     if (est === "habla" && mov) {
-      const n = (ligero ? 4 : 14) * (1 + nivelAg * 3) * dt, max = ligero ? 30 : 140;
+      const n = (ligero ? 4 : 14) * (1 + nivelAg * 3) * dt * (reg?.part ?? 1), max = ligero ? 30 : 140;
       for (let i = 0; i < n + (Math.random() < n % 1 ? 1 : 0) && estela.length < max; i++) {
         const a = Math.random() * 6.283;
         estela.push({x: ox + Math.cos(a) * R, y: oy + Math.sin(a) * R, vx: Math.cos(a) * 18, vy: Math.sin(a) * 18 - 14, v: 0, max: 1.1 + Math.random() * .9});
@@ -1584,7 +1597,6 @@ $("archivo").onchange = e => subirArchivo(e.target.files[0]);
 $("btnApi").onclick = volverApi;
 $("btnExportar").onclick = exportar;
 $("btnExportarJson").onclick = exportarJson;
-$("interrupciones").onchange = $("audifonos").onchange = () => estadoReposo();
 $("formTexto").onsubmit = e => { e.preventDefault(); const t = $("texto").value; $("texto").value = ""; preguntarTexto(t); };
 etiqueta("agente");
 pintarPanel();
