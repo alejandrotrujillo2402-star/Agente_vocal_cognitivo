@@ -423,6 +423,7 @@ const S = {
   dgFallo: "", avisoDG: "", wsFallos: 0,
   // calidad de la transcripción: vocabulario de la sesión, audio reciente (16 kHz) para refinar, nivel del micrófono
   voc: null, audio: [], turnoDesde: null, vozDetectada: 0, nivelProm: 0, bajoDesde: 0,
+  frases: new Set(), nFrase: 0,   // frases encoladas (sin duplicados) y su id
 };
 
 /* ---------- utilidades ---------- */
@@ -1131,7 +1132,11 @@ function decirRelleno() {
 function hablar(texto, op = {}) {
   texto = String(texto || "").replace(/\s+/g, " ").trim();
   if (!conContenido(texto)) return;   // nunca se lee "..." ni texto vacío
-  const item = {texto, audio: null, relleno: !!op.relleno, lat: op.lat || null};
+  // id por frase: la misma frase de la misma respuesta nunca se encola dos veces
+  const clave = texto + "|" + (op.lat ? op.lat.t0 : op.relleno ? "relleno" : "");
+  if (S.frases.has(clave)) return;
+  S.frases.add(clave);
+  const item = {id: ++S.nFrase, texto, audio: null, relleno: !!op.relleno, lat: op.lat || null, respaldo: false};
   if (op.url) item.audio = new Audio(op.url);
   else if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; }
   S.cola.push(item);
@@ -1146,7 +1151,16 @@ function siguiente() {
   S.hablando = true; S.sonoRespuesta = true; S.vozNav = !it.audio;
   S.textoHablado = it.texto; S.ecoTexto = (S.ecoTexto + " " + it.texto).slice(-1500); estado("hablando");
   const fin = () => { if (S.actual === it) siguiente(); };
-  const respaldo = () => { if (S.actual !== it) return; it.audio = null; S.vozNav = true; hablarNavegador(it.texto, fin, () => marcarLatencia(it)); };
+  // un solo reproductor: lo que quedara sonando (otro Audio o la voz del navegador) se corta antes de esta frase
+  callarTodo(it);
+  // respaldo del navegador solo si falla Aura y una única vez (error y play() rechazado llegan los dos)
+  const respaldo = () => {
+    if (S.actual !== it || it.respaldo) return;
+    it.respaldo = true;
+    if (it.audio) { it.audio.onended = it.audio.onerror = it.audio.onplaying = null; it.audio.pause(); }
+    it.audio = null; S.vozNav = true;
+    hablarNavegador(it.texto, fin, () => marcarLatencia(it));
+  };
   if (it.audio) {
     it.audio.onplaying = () => { marcarLatencia(it); Orbe.voz(it.audio); };
     it.audio.onended = fin;
@@ -1160,6 +1174,13 @@ function finVoz() {
   const ahora = performance.now(), t = S.tramos[S.tramos.length - 1];
   if (t && t.fin == null) t.fin = ahora;
   S.hablando = false; S.ecoHasta = ahora + ECO_MS; S.ecoSuave = ahora + 2500;
+}
+
+/* Detiene todo el audio del agente salvo la frase `menos` (si se da): Audio de Aura y voz del navegador. */
+function callarTodo(menos) {
+  for (const a of document.querySelectorAll("audio")) if (a !== menos?.audio) a.pause();
+  for (const it of [S.actual, ...S.cola]) if (it && it !== menos && it.audio && !it.audio.paused) it.audio.pause();
+  try { speechSynthesis.cancel(); } catch {}
 }
 
 function hablarNavegador(texto, fin, inicio) {
@@ -1190,7 +1211,7 @@ function interrumpir(silencioso) {
   const habia = S.hablando || S.pensando;
   S.abort?.abort(); S.abort = null;
   for (const it of [S.actual, ...S.cola]) if (it?.audio) { it.audio.onended = it.audio.onerror = it.audio.onplaying = null; it.audio.pause(); it.audio.removeAttribute("src"); it.audio.load(); }
-  S.cola = []; S.actual = null;
+  S.cola = []; S.actual = null; S.frases.clear();
   try { speechSynthesis.cancel(); } catch {}
   if (habia && S.lineaAgente && !silencioso) S.lineaAgente.classList.add("interrumpida");
   if (habia && !silencioso) $("respuesta").classList.add("interrumpida");
