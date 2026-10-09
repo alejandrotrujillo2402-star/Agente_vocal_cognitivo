@@ -31,7 +31,8 @@ Cómo decides:
 Cómo hablas:
 - Es voz: 1 a 3 frases cortas, máximo 60 palabras, español natural, sin markdown, listas ni emojis. Escribe las cifras con dígitos.
 - Adapta el tono al ESTADO EMOCIONAL: con frustración o confusión, reconoce en pocas palabras, simplifica y ofrece un camino concreto; con enojo, no discutas ni te justifiques.
-- Si aparece la instrucción ESCALAR, llama escalar_a_humano y luego informa el número de caso una sola vez."""
+- Si aparece la instrucción ESCALAR, llama escalar_a_humano y luego informa el número de caso una sola vez.
+- Si te piden silencio, no respondas. Si el mensaje es un fragmento incompleto, pide en máximo 6 palabras que complete la idea."""
 
 TOOL_ESCALAR = {
     "type": "function",
@@ -51,12 +52,59 @@ TOOL_ESCALAR = {
 }
 
 PIDE_HUMANO = re.compile(r"\b(humano|asesor|persona real|una persona|alguien real|supervisor|analista|operador)\b")
-SOCIAL = re.compile(r"^(hola|buenas|buenos dias|buenas tardes|gracias|muchas gracias|chao|adios|hasta luego|ok|listo|perfecto|quien eres|que eres)\b")
+SILENCIO = re.compile(r"\b(callate|callado|callada|silencio|para ya|detente|deja de hablar|no hables|espera|stop|shh)\b")
+INTERROGATIVA = re.compile(r"\b(qué|cuánt[oa]s?|cuál(?:es)?|dónde|cómo|quién(?:es)?|cuándo)\b")
+INTERROGATIVA_SIN_TILDE = re.compile(r"\b(cuant[oa]s?|cual(?:es)?|donde|quien(?:es)?|cuando)\b")
+
+_SAL = r"(?:hola|buenas|buenos dias|buenas tardes|buenas noches|que tal|hey|saludos)"
+_COMO = r"(?:como estas|como esta|como vas|como te va|que tal estas|como te encuentras|como te sientes|como va todo|que tal todo)"
+_PRES = r"(?:estas|estas ahi|sigues ahi|me escuchas|me oyes|hay alguien|estas ahi agente)"
+_GRA = r"(?:gracias|muchas gracias|mil gracias|te agradezco|ok gracias|listo gracias|perfecto gracias)"
+_DES = r"(?:chao|adios|hasta luego|hasta pronto|nos vemos|bye)"
+_ACK = r"(?:ok|okay|listo|perfecto|vale|de acuerdo|entendido|muy bien|excelente)"
+_QUI = r"(?:quien eres|que eres)"
+_COLA = r"(?: agente| por favor| amigo)?"
+SOCIAL = [
+    ("como", re.compile(rf"^(?:{_SAL} )*{_COMO}{_COLA}$")),
+    ("saludo", re.compile(rf"^{_SAL}(?: {_SAL})*{_COLA}$")),
+    ("gracias", re.compile(rf"^{_GRA}(?: {_DES})?{_COLA}$")),
+    ("despedida", re.compile(rf"^{_DES}(?: {_DES})*{_COLA}$")),
+    ("quien", re.compile(rf"^(?:{_SAL} )*{_QUI}{_COLA}$")),
+    ("presencia", re.compile(rf"^(?:{_SAL} )*{_PRES}{_COLA}$")),
+    ("ack", re.compile(rf"^{_ACK}{_COLA}$")),
+]
+PLANTILLAS = {
+    "saludo": ["Hola, ¿en qué puedo ayudarte?", "¡Hola! ¿En qué te ayudo?", "Hola. Cuéntame, ¿qué quieres consultar?"],
+    "como": ["Muy bien, gracias. ¿En qué puedo ayudarte?", "Todo bien por aquí. ¿Qué quieres consultar?"],
+    "gracias": ["Con gusto.", "Con mucho gusto. ¿Algo más?", "A la orden."],
+    "despedida": ["Hasta luego.", "Hasta pronto, fue un gusto.", "Chao, que estés bien."],
+    "quien": ["Soy un asistente de voz que responde con los datos de IPS de datos.gov.co. ¿Qué quieres saber?"],
+    "ack": ["Perfecto. ¿Algo más?", "Listo. ¿Qué más quieres saber?"],
+    "presencia": ["Sí, aquí estoy. ¿Qué quieres consultar?", "Te escucho. ¿En qué te ayudo?"],
+}
 
 
 def norm(t):
     t = unicodedata.normalize("NFKD", str(t).lower())
     return "".join(c for c in t if not unicodedata.combining(c)).strip(" ¿?¡!.,")
+
+
+def limpio(t):
+    return " ".join(re.sub(r"[^a-z0-9ñ ]+", " ", norm(t)).split())
+
+
+def es_pregunta(t):
+    return "?" in t or bool(INTERROGATIVA.search(t.lower()) or INTERROGATIVA_SIN_TILDE.search(limpio(t)))
+
+
+def es_silencio(t):
+    p = limpio(t)
+    return bool(SILENCIO.search(p)) and (not es_pregunta(t) or len(p.split()) <= 5)
+
+
+def tipo_social(t):
+    p = limpio(t)
+    return next((tipo for tipo, rx in SOCIAL if rx.match(p)), None)
 
 
 @dataclass
@@ -154,10 +202,7 @@ def construir_mensajes(s: Sesion, pregunta: str, escalar):
 
 
 def ruta(pregunta, escalar):
-    """Enrutador: charla social -> modelo rápido sin herramientas; lo demás -> modelo con herramientas."""
-    p = norm(pregunta)
-    if not escalar and SOCIAL.match(p) and len(p.split()) <= 6:
-        return "social", llm.MODELO_RAPIDO, None
+    """La charla social se resuelve antes, con plantillas; todo lo que llega aquí va al modelo con herramientas."""
     return "herramientas", llm.MODELO, datos_ips.TOOLS + [TOOL_ESCALAR]
 
 
@@ -182,11 +227,27 @@ def resumen_resultado(res, limite=220):
 # ---------------- ciclo de decisión ----------------
 
 async def responder(sid: str, pregunta: str, modelo: str | None = None):
-    """Genera eventos: decision, paso, escalamiento, delta, fin."""
+    """Genera eventos: silencio, decision, consultando, paso, escalamiento, delta, fin."""
     s = sesion(sid)
     t0 = time.perf_counter()
-    if s.pendientes:  # espera breve al análisis emocional de este turno
-        await asyncio.wait(list(s.pendientes), timeout=0.4)
+    if es_silencio(pregunta):
+        yield {"t": "silencio"}
+        yield {"t": "fin", "x": {"ms_total": 0, "ms_primer_token": 0, "modelo": "ninguno", "consultas": 0,
+                                 "exitos": 0, "fallos_seguidos": s.fallos, "silencio": True}}
+        return
+
+    social = tipo_social(pregunta)
+    if social:
+        texto = random.choice(PLANTILLAS[social])
+        yield {"t": "decision", "x": {"ruta": "instantánea", "modelo": "plantilla", "escalar": None,
+                                      "emocion": estado_emocional(s), "contexto": dict(s.entidades)}}
+        yield {"t": "delta", "x": texto}
+        s.historial += [{"role": "user", "content": pregunta}, {"role": "assistant", "content": texto}]
+        s.historial[:] = s.historial[-12:]
+        ms = int((time.perf_counter() - t0) * 1000)
+        yield {"t": "fin", "x": {"ms_total": ms, "ms_primer_token": ms, "modelo": "plantilla", "consultas": 0,
+                                 "exitos": 0, "fallos_seguidos": s.fallos}}
+        return
 
     escalar = motivo_escalar(s, pregunta)
     tipo_ruta, modelo_usado, tools = ruta(pregunta, escalar)
@@ -196,10 +257,14 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
     yield {"t": "decision", "x": {"ruta": tipo_ruta, "modelo": modelo_usado, "escalar": escalar,
                                   "emocion": estado_emocional(s), "contexto": dict(s.entidades)}}
 
-    texto, primer_token, consultas, exitos = "", None, 0, 0
+    texto, primer_token, consultas, exitos, avisado = "", None, 0, 0, False
     for paso in range(1, MAX_PASOS + 2):
         forzar_cierre = paso > MAX_PASOS
         llamadas = None
+        if texto and not texto[-1].isspace():
+            # texto de un paso anterior (antes de consultar): sin separador quedaba pegado ("IPS.Todo bien")
+            texto += " "
+            yield {"t": "delta", "x": " "}
         try:
             async for tipo, x in llm.stream(mensajes, None if forzar_cierre else tools, modelo=modelo_usado):
                 if tipo == "texto":
@@ -220,6 +285,9 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
             continue
         if not llamadas:
             break
+        if not avisado:
+            avisado = True
+            yield {"t": "consultando"}
         mensajes.append({"role": "assistant", "content": "", "tool_calls": [
             {"id": c["id"], "type": "function", "function": {"name": c["nombre"], "arguments": c["args"] or "{}"}}
             for c in llamadas]})
@@ -255,8 +323,9 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
 
     if consultas:
         s.fallos = 0 if exitos else s.fallos + 1
-    s.historial += [{"role": "user", "content": pregunta}, {"role": "assistant", "content": texto[:800]}]
-    s.historial[:] = s.historial[-12:]
+    if re.sub(r"[\W_]+", "", texto):
+        s.historial += [{"role": "user", "content": pregunta}, {"role": "assistant", "content": texto[:800]}]
+        s.historial[:] = s.historial[-12:]
     fin = time.perf_counter()
     yield {"t": "fin", "x": {"ms_total": int((fin - t0) * 1000),
                              "ms_primer_token": int(((primer_token or fin) - t0) * 1000),

@@ -7,6 +7,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -21,19 +22,33 @@ import datos_ips
 import llm
 
 load_dotenv()
-DEEPGRAM = os.getenv("DEEPGRAM_API_KEY", "")
-STT_MODELO = os.getenv("STT_MODEL", "nova-2")
-TTS_VOZ = os.getenv("TTS_VOZ", "aura-2-celeste-es")
+DEEPGRAM = os.getenv("DEEPGRAM_API_KEY", "").strip()
+STT_MODELO = os.getenv("STT_MODEL", "nova-2").strip() or "nova-2"
+TTS_VOZ = os.getenv("TTS_VOZ", "aura-2-celeste-es").strip() or "aura-2-celeste-es"
 ESTATICOS = Path(__file__).parent / "static"
+DG_ERROR = {"motivo": None, "hora": None}
+HTTP: httpx.AsyncClient | None = None
+
+
+def cliente_http():
+    global HTTP
+    if HTTP is None or HTTP.is_closed:
+        HTTP = httpx.AsyncClient(timeout=30, limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=120))
+    return HTTP
 
 
 @asynccontextmanager
 async def ciclo(app):
+    cliente_http()
     try:
         await datos_ips.cargar()
     except Exception as e:
         print("No se pudieron cargar los datos al arrancar:", e)
+    calentamiento = asyncio.create_task(llm.calentar())
     yield
+    calentamiento.cancel()
+    if HTTP is not None:
+        await HTTP.aclose()
 
 
 app = FastAPI(title="Agente Vocal Cognitivo", lifespan=ciclo)
@@ -48,6 +63,8 @@ def inicio():
 def health():
     return {"ok": True, "llm": bool(llm.CLAVE), "modelo": llm.MODELO, "modelo_rapido": llm.MODELO_RAPIDO,
             "respaldos": llm.RESPALDOS, "stt": bool(DEEPGRAM), "tts": bool(DEEPGRAM), "stt_modelo": STT_MODELO,
+            "stt_error": DG_ERROR["motivo"], "stt_error_hora": DG_ERROR["hora"],
+            "stt_motivo": None if DEEPGRAM else "DEEPGRAM_API_KEY no configurada en el servidor",
             "voz": TTS_VOZ, "datos": datos_ips.estado()}
 
 
@@ -191,7 +208,7 @@ async def tts(texto: str, voz: str = ""):
     texto = para_voz(texto.strip()[:1200])
     if not texto:
         raise HTTPException(400, "texto vacío")
-    http = httpx.AsyncClient(timeout=30)
+    http = cliente_http()
     pedido = http.build_request("POST", "https://api.deepgram.com/v1/speak",
                                 params={"model": voz or TTS_VOZ, "encoding": "mp3"},
                                 headers={"Authorization": f"Token {DEEPGRAM}"}, json={"text": texto})
@@ -199,7 +216,6 @@ async def tts(texto: str, voz: str = ""):
     if r.status_code != 200:
         detalle = (await r.aread())[:200]
         await r.aclose()
-        await http.aclose()
         raise HTTPException(502, f"TTS falló: {detalle!r}")
 
     async def audio():
@@ -208,16 +224,48 @@ async def tts(texto: str, voz: str = ""):
                 yield trozo
         finally:
             await r.aclose()
-            await http.aclose()
 
     return StreamingResponse(audio(), media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 # ---------------- transcripción diarizada (STT) ----------------
 
-PARAMS_STT = {"model": STT_MODELO, "language": "es", "diarize": "true", "smart_format": "true",
+PARAMS_STT = {"language": "es", "diarize": "true", "smart_format": "true",
               "punctuate": "true", "interim_results": "true", "utterance_end_ms": "1200",
               "vad_events": "true", "endpointing": "400"}
+
+
+def registrar_error_dg(motivo):
+    DG_ERROR["motivo"] = motivo
+    DG_ERROR["hora"] = datetime.now().strftime("%H:%M:%S") if motivo else None
+    if motivo:
+        print("Deepgram falló:", motivo)
+
+
+def motivo_dg(e):
+    """Texto legible de un fallo de Deepgram; en el handshake incluye el código HTTP y el cuerpo."""
+    resp = getattr(e, "response", None)
+    if resp is not None and hasattr(resp, "status_code"):
+        cuerpo = getattr(resp, "body", b"") or b""
+        cuerpo = cuerpo.decode("utf-8", "replace") if isinstance(cuerpo, bytes) else str(cuerpo)
+        dg = resp.headers.get("dg-error") if getattr(resp, "headers", None) else None
+        return f"HTTP {resp.status_code}: {dg or cuerpo or 'sin detalle'}"[:200]
+    return (str(e) or type(e).__name__)[:200]
+
+
+async def conectar_dg():
+    """Abre el WebSocket con Deepgram; si el modelo es rechazado, reintenta una vez con el otro."""
+    from websockets.asyncio.client import connect
+    modelos = [STT_MODELO, "nova-3" if STT_MODELO != "nova-3" else "nova-2"]
+    for i, modelo in enumerate(modelos):
+        url = "wss://api.deepgram.com/v1/listen?" + "&".join(f"{k}={v}" for k, v in {"model": modelo, **PARAMS_STT}.items())
+        try:
+            return await connect(url, additional_headers={"Authorization": f"Token {DEEPGRAM}"}, max_size=None)
+        except Exception as e:
+            motivo = motivo_dg(e)
+            if i == 0 and "model" in motivo.lower():
+                continue
+            raise RuntimeError(motivo) from e
 
 
 @app.websocket("/ws/stt")
@@ -225,13 +273,13 @@ async def ws_stt(ws: WebSocket):
     """Puente navegador <-> Deepgram: la clave nunca llega al navegador."""
     await ws.accept()
     if not DEEPGRAM:
-        await ws.send_text(json.dumps({"type": "Error", "description": "STT no configurado"}))
+        await ws.send_text(json.dumps({"type": "Error", "description": "DEEPGRAM_API_KEY no configurada en el servidor"}))
         await ws.close()
         return
-    from websockets.asyncio.client import connect
-    url = "wss://api.deepgram.com/v1/listen?" + "&".join(f"{k}={v}" for k, v in PARAMS_STT.items())
     try:
-        async with connect(url, additional_headers={"Authorization": f"Token {DEEPGRAM}"}, max_size=None) as dg:
+        dg = await conectar_dg()
+        registrar_error_dg(None)
+        async with dg:
             async def subir():
                 while True:
                     m = await ws.receive()
@@ -248,12 +296,17 @@ async def ws_stt(ws: WebSocket):
                     await ws.send_text(m if isinstance(m, str) else m.decode())
 
             tareas = [asyncio.create_task(subir()), asyncio.create_task(bajar())]
-            _, pendientes = await asyncio.wait(tareas, return_when=asyncio.FIRST_COMPLETED)
+            hechas, pendientes = await asyncio.wait(tareas, return_when=asyncio.FIRST_COMPLETED)
             for t in pendientes:
                 t.cancel()
+            bajada = tareas[1]
+            if bajada in hechas and bajada.exception() is not None:
+                raise bajada.exception()
     except Exception as e:
+        motivo = motivo_dg(e)
+        registrar_error_dg(motivo)
         try:
-            await ws.send_text(json.dumps({"type": "Error", "description": str(e)[:200]}))
+            await ws.send_text(json.dumps({"type": "Error", "description": motivo}))
         except Exception:
             pass
     finally:

@@ -1,5 +1,7 @@
 """Pruebas sin red: datos sintéticos con las trampas reales del dataset y LLM falso."""
+import asyncio
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -163,13 +165,74 @@ async def test_dos_turnos_fallidos_escalan(monkeypatch):
     assert agente.motivo_escalar(agente.sesion("a5"), "y entonces?") == "sin_respuesta"
 
 
-@pytest.mark.anyio
-async def test_enrutador_social_sin_herramientas(monkeypatch):
-    stream, vistos = guion("¡Hola! Pregúntame por IPS.")
+def prohibir_llm(monkeypatch):
+    async def stream(*a, **k):
+        raise AssertionError("no debía llamar al LLM")
+        yield
     monkeypatch.setattr(llm, "stream", stream)
+
+
+@pytest.mark.anyio
+async def test_enrutador_social_sin_modelo(monkeypatch):
+    prohibir_llm(monkeypatch)
     ev = await correr("a6", "Hola, buenos días")
-    assert vistos[0]["tools"] is None and vistos[0]["modelo"] == llm.MODELO_RAPIDO
-    assert ev[0]["x"]["ruta"] == "social"
+    assert ev[0]["x"]["ruta"] == "instantánea" and ev[0]["x"]["modelo"] == "plantilla"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("frase", ["quédate callado", "cállate por favor"])
+async def test_comando_silencio_no_llama_al_llm(monkeypatch, frase):
+    prohibir_llm(monkeypatch)
+    ev = await correr("s1", frase)
+    assert [e["t"] for e in ev] == ["silencio", "fin"]
+    assert agente.sesion("s1").historial == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("frase", ["hola", "gracias", "buenos días", "¿Cómo te encuentras?", "¿estás?", "¿Estás ahí?"])
+async def test_social_instantaneo_sin_llm(monkeypatch, frase):
+    prohibir_llm(monkeypatch)
+    t0 = time.perf_counter()
+    ev = await correr("s2", frase)
+    assert (time.perf_counter() - t0) * 1000 < 50
+    assert [e["t"] for e in ev] == ["decision", "delta", "fin"]
+    assert ev[0]["x"]["ruta"] == "instantánea" and ev[1]["x"].strip()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("frase", ["hola, ¿cuántas sedes hay en Caldas?", "espera, ¿cuántas camas hay en Manizales?"])
+async def test_saludo_o_espera_con_pregunta_si_va_al_llm(monkeypatch, frase):
+    stream, vistos = guion("En Caldas hay 3 sedes.")
+    monkeypatch.setattr(llm, "stream", stream)
+    ev = await correr("s3", frase)
+    assert len(vistos) == 1 and ev[0]["x"]["ruta"] == "herramientas"
+
+
+@pytest.mark.anyio
+async def test_no_espera_el_analisis_emocional(monkeypatch):
+    s = agente.sesion("s4")
+    s.pendientes.add(asyncio.get_running_loop().create_future())   # análisis que nunca termina
+    stream, _ = guion("Hay 5 sedes.")
+    monkeypatch.setattr(llm, "stream", stream)
+    t0 = time.perf_counter()
+    await correr("s4", "¿cuántas sedes hay en total?")
+    assert (time.perf_counter() - t0) * 1000 < 100
+
+
+@pytest.mark.anyio
+async def test_respuesta_vacia_no_entra_al_historial(monkeypatch):
+    stream, _ = guion("...")
+    monkeypatch.setattr(llm, "stream", stream)
+    await correr("s5", "y eso de las camas en general")
+    assert agente.sesion("s5").historial == []
+
+
+@pytest.mark.anyio
+async def test_avisa_consultando_antes_de_ejecutar(monkeypatch):
+    stream, _ = guion([("consultar_estadistica", {"metrica": "num_sedes", "filtros": {"departamento": "Caldas"}})], "Hay 3 sedes.")
+    monkeypatch.setattr(llm, "stream", stream)
+    tipos = [e["t"] for e in await correr("s6", "¿cuántas sedes hay en Caldas?")]
+    assert tipos.index("consultando") < tipos.index("paso") and tipos.count("consultando") == 1
 
 
 @pytest.mark.anyio
@@ -201,6 +264,11 @@ def test_endpoints_basicos(monkeypatch):
     r = cliente.post("/api/preguntar", json={"sesion": "w1", "pregunta": "¿cuántas sedes?"})
     tipos = [json.loads(l)["t"] for l in r.text.splitlines()]
     assert tipos[0] == "decision" and tipos[-1] == "fin"
+
+
+def test_health_informa_estado_de_deepgram():
+    h = cliente.get("/health").json()
+    assert {"stt", "tts", "stt_error", "stt_motivo"} <= h.keys()
 
 
 def test_analizar_guarda_emocion_en_sesion(monkeypatch):
