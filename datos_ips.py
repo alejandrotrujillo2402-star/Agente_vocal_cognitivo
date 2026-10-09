@@ -3,6 +3,7 @@ Versión base con el contrato acordado; la versión de Cursor la reemplaza con e
 
 Contrato: cargar(), estado(), TOOLS, ejecutar(nombre, args), brief(), PROMPT_DATOS, preguntas_evaluacion()
 """
+import json
 import asyncio
 import difflib
 import os
@@ -357,31 +358,31 @@ def ejecutar(nombre, args):
 
 _FILTROS = {"type": "object", "properties": {
     "departamento": {"type": "string"}, "municipio": {"type": "string"},
-    "naturaleza": {"type": "string", "description": "Pública, Privada o Mixta"},
-    "nivel_atencion": {"type": ["string", "integer"], "description": "1, 2 o 3 (solo públicas)"},
-    "grupo_capacidad": {"type": "string", "description": "Solo uno de: CAMAS, CONSULTORIOS, SALAS, AMBULANCIAS, CAMILLAS, UNIDAD MOVIL, SILLAS. La UCI va en descripcion_capacidad"},
-    "descripcion_capacidad": {"type": "string", "description": "Detalle dentro del grupo. Ej: uci adultos, uci neonatal, Adultos, Pediátrica, Básica, Medicalizada"},
+    "naturaleza": {"type": "string", "description": "Pública|Privada|Mixta"},
+    "nivel_atencion": {"type": ["string", "integer"], "description": "1-3, solo públicas"},
+    "grupo_capacidad": {"type": "string", "description": "CAMAS|CONSULTORIOS|SALAS|AMBULANCIAS|CAMILLAS|UNIDAD MOVIL|SILLAS"},
+    "descripcion_capacidad": {"type": "string", "description": "Detalle; la UCI va aquí: uci adultos, uci neonatal, Medicalizada"},
     "incluir_distritos": {"type": ["boolean", "string"]}}}
 
 TOOLS = [
     {"type": "function", "function": {"name": "consultar_estadistica",
-     "description": "Cifras exactas: número de prestadores, de sedes o suma de capacidad instalada (camas, ambulancias...: indica SIEMPRE filtros.grupo_capacidad al sumar), con filtros y ranking opcional.",
+     "description": "Cuenta prestadores o sedes, o suma capacidad (con filtros.grupo_capacidad o descripcion_capacidad); ranking con agrupar_por y top_n.",
      "parameters": {"type": "object", "properties": {
          "metrica": {"type": "string", "enum": ["num_prestadores", "num_sedes", "suma_capacidad"]},
          "filtros": _FILTROS,
          "agrupar_por": {"type": "string", "enum": ["departamento", "municipio", "naturaleza", "nivel_atencion", "grupo_capacidad", "descripcion_capacidad"]},
          "top_n": {"type": ["integer", "string"]}}, "required": ["metrica"]}}},
     {"type": "function", "function": {"name": "buscar_ips",
-     "description": "Ficha de una IPS por nombre (tolera errores): sede, contacto, gerente, nivel y capacidad.",
+     "description": "Ficha de una IPS por nombre: contacto, gerente, nivel, capacidad.",
      "parameters": {"type": "object", "properties": {"nombre": {"type": "string"}, "municipio": {"type": "string"},
                                                        "departamento": {"type": "string"}}, "required": ["nombre"]}}},
     {"type": "function", "function": {"name": "listar_valores",
-     "description": "Valores válidos de una columna, para resolver nombres dudosos.",
+     "description": "Valores válidos de una columna (nombres dudosos).",
      "parameters": {"type": "object", "properties": {
          "columna": {"type": "string", "enum": ["departamento", "municipio", "naturaleza", "grupo_capacidad", "descripcion_capacidad", "nivel_atencion"]},
          "contiene": {"type": "string"}}, "required": ["columna"]}}},
     {"type": "function", "function": {"name": "info_dataset",
-     "description": "Qué contiene y qué no contiene el dataset, totales y fecha de corte.",
+     "description": "Qué contiene y qué no el dataset, totales, fecha de corte.",
      "parameters": {"type": "object", "properties": {}}}},
 ]
 
@@ -403,23 +404,36 @@ for _t in TOOLS:
     _permitir_null(_t["function"]["parameters"])
 
 PROMPT_DATOS = """FICHA DEL DATASET
-- Cada fila es una sede con un tipo de capacidad. Prestador (la institución, con NIT) es distinto de sede (cada punto de atención). "¿Cuántas IPS?" se responde con prestadores y se aclara; nunca se cuentan filas.
-- Naturaleza: Pública, Privada o Mixta. El nivel de atención (1, 2, 3) SOLO existe para públicas.
-- Cali, Buenaventura, Barranquilla, Cartagena y Santa Marta aparecen como departamentos aparte; por defecto se suman a su departamento y se dice.
-- Capacidad: CAMAS, CONSULTORIOS, SALAS, AMBULANCIAS, CAMILLAS, UNIDAD MOVIL, SILLAS; la UCI aparece con varios nombres (usa "uci adultos").
-- Fecha de corte del REPS: noviembre de 2022. No hay datos más recientes.
-- NO contiene: médicos, especialidades, EPS, precios, calidad, citas ni ocupación."""
+- Prestador (institución, NIT) ≠ sede (punto de atención). "¿Cuántas IPS?" = prestadores, y se aclara.
+- Nivel de atención (1-3) solo existe para públicas.
+- Cali, Buenaventura, Barranquilla, Cartagena y Santa Marta son departamentos aparte; se suman a su departamento y se dice.
+- UCI: descripcion_capacidad "uci adultos". Corte: noviembre de 2022.
+- No contiene médicos, EPS, precios, calidad, citas ni ocupación."""
 
 
 def miles(n):
     return f"{int(n):,}".replace(",", ".")
 
 
+BRIEF_CACHE = SNAPSHOT.with_name("brief_cache.json")
+
+
 def brief():
+    """Se calcula una vez por fuente (memoria). Para la API, también en disco junto al parquet: no se recalcula al arrancar."""
     f = _fuente()
     if f.get("brief"):
         return f["brief"]
     df = _df()
+    de_api = f is _D and str(f.get("fuente", "")).startswith(("snapshot", "api"))   # no los datos de prueba
+    clave = [int(len(df)), fecha_corte()]
+    if de_api and BRIEF_CACHE.exists():
+        try:
+            guardado = json.loads(BRIEF_CACHE.read_text(encoding="utf-8"))
+            if guardado.get("clave") == clave:
+                f["brief"] = guardado["brief"]
+                return f["brief"]
+        except (OSError, ValueError):
+            pass
     e = estado()
     nat = df.drop_duplicates("prestador_id")["naturaleza"].value_counts()
     top = df.groupby("depto_canonico")["sede_id"].nunique().sort_values(ascending=False)
@@ -442,6 +456,11 @@ def brief():
                               "con su capacidad instalada. Pregúntame por camas, ambulancias, una IPS o un municipio."),
          "stats": {**e, "naturaleza": {k: int(v) for k, v in nat.items()}, "camas": camas, "uci_adultos": uci}}
     f["brief"] = b
+    if de_api:
+        try:
+            BRIEF_CACHE.write_text(json.dumps({"clave": clave, "brief": b}, ensure_ascii=False, default=str), encoding="utf-8")
+        except OSError:
+            pass
     return b
 
 

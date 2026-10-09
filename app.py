@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 import agente  # noqa: E402
 import datos_ips  # noqa: E402
 import documentos  # noqa: E402
+import emociones  # noqa: E402
 import llm  # noqa: E402
 
 DEEPGRAM = os.getenv("DEEPGRAM_API_KEY", "").strip()
@@ -84,7 +85,7 @@ async def calentar():
 @app.get("/api/estado")
 def estado(sesion: str = ""):
     """Fuente de la sesión: la API, o el archivo que cargó (tipo "ips" o "documento")."""
-    return agente.estado_fuente(agente.SESIONES.get(sesion))
+    return {**agente.estado_fuente(agente.SESIONES.get(sesion)), "consumo_tokens": llm.CONSUMO}
 
 
 @app.post("/api/recargar")
@@ -192,23 +193,47 @@ def _num(v, lo, hi):
         return 0.0
 
 
-async def analizar_texto(texto, hablante=""):
+# Turnos humanos analizados por sesión y el último que usó el LLM: el LLM se usa como máximo 1 de cada 3 turnos.
+TURNOS_EMOCION: "OrderedDict[str, list]" = OrderedDict()
+
+
+def usar_llm_emocion(sesion, hablante, texto, local):
+    """El clasificador local decide casi siempre. LLM solo con más de 6 palabras, confianza local baja, voz humana
+    y si no se usó en los 2 turnos anteriores de la sesión."""
+    if hablante == "Agente":
+        return False
+    t = TURNOS_EMOCION.setdefault(sesion, [0, -9])
+    TURNOS_EMOCION.move_to_end(sesion)
+    while len(TURNOS_EMOCION) > 500:
+        TURNOS_EMOCION.popitem(last=False)
+    t[0] += 1
+    if emociones.palabras(texto) <= 6 or local["confianza"] >= 0.5 or t[0] - t[1] < 3:
+        return False
+    t[1] = t[0]
+    return True
+
+
+async def analizar_texto(texto, hablante="", sesion=""):
+    local = emociones.analizar(texto)
+    if not usar_llm_emocion(sesion, hablante, texto, local):
+        return local
+    llm.PETICION.set({"tipo": "emocion", "cuenta": {}})
     try:
         r = await asyncio.wait_for(llm.json_rapido([{"role": "system", "content": PROMPT_EMOCION},
                                                     {"role": "user", "content": f"{hablante}: {texto}"}]), 3)
     except Exception:
-        r = {}
-    emociones = {e: round(_num((r.get("emociones") or {}).get(e, 0), 0, 1), 2) for e in EMOCIONES}
+        return local   # sin LLM (cupo, red): queda el análisis local
+    emo = {e: round(_num((r.get("emociones") or {}).get(e, 0), 0, 1), 2) for e in EMOCIONES}
     sentimiento = r.get("sentimiento") if r.get("sentimiento") in ("positivo", "neutral", "negativo") else "neutral"
     dominante = r.get("dominante") if r.get("dominante") in EMOCIONES else (
-        max(emociones, key=emociones.get) if max(emociones.values()) >= 0.4 else "neutral")
+        max(emo, key=emo.get) if max(emo.values()) >= 0.4 else "neutral")
     return {"sentimiento": sentimiento, "polaridad": round(_num(r.get("polaridad", 0), -1, 1), 2),
-            "emociones": emociones, "dominante": dominante}
+            "emociones": emo, "dominante": dominante, "origen": "llm"}
 
 
 @app.post("/api/analizar")
 async def analizar(a: Analisis):
-    res = await analizar_texto(a.texto, a.hablante)
+    res = await analizar_texto(a.texto, a.hablante, a.sesion)
     if a.sesion and a.hablante != "Agente":  # el agente lo usa en el turno siguiente, sin esperarlo
         agente.registrar_emocion(agente.sesion(a.sesion), res)
     return res

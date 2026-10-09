@@ -236,7 +236,9 @@ async def test_responder_no_espera_el_analisis_emocional(monkeypatch):
     monkeypatch.setattr(llm, "json_rapido", lento)
     stream, _ = guion("Hay 5 sedes.")
     monkeypatch.setattr(llm, "stream", stream)
-    analisis = asyncio.create_task(api.analizar(api.Analisis(texto="¿cuántas sedes?", hablante="Hablante 1", sesion="e1")))
+    # texto largo y sin señales claras: el clasificador local no basta y va al LLM (lento aquí)
+    analisis = asyncio.create_task(api.analizar(api.Analisis(texto="le cuento esto para un trabajo de la universidad que tengo",
+                                                             hablante="Hablante 1", sesion="e1")))
     await asyncio.sleep(0)  # el análisis queda en curso
     t0 = time.perf_counter()
     ev = await correr("e1", "¿cuántas sedes hay?")
