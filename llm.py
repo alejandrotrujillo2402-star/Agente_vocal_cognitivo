@@ -65,10 +65,12 @@ async def calentar():
     """Llamada mínima para abrir la conexión con el proveedor antes de la primera pregunta real."""
     if not CLAVE:
         return
-    try:
-        await cliente.chat.completions.create(model=MODELO, messages=[{"role": "user", "content": "ok"}], max_tokens=1)
-    except Exception as e:  # aunque el proveedor la rechace, la conexión ya quedó abierta
-        print("Calentamiento del LLM:", str(e)[:120])
+    for modelo in dict.fromkeys([MODELO, MODELO_RAPIDO]):
+        try:
+            await cliente.chat.completions.create(model=modelo, messages=[{"role": "user", "content": "ok"}],
+                                                  max_tokens=1, **_extra(modelo))
+        except Exception as e:  # aunque el proveedor la rechace, la conexión ya quedó abierta
+            print("Calentamiento del LLM:", modelo, str(e)[:120])
 
 
 def _espera(e):

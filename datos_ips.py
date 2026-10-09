@@ -154,14 +154,21 @@ def fecha_corte():
     return (df["fecha_corte"].mode().iat[0] if df is not None and len(df) else "")
 
 
+_ESTADO = {}
+
+
 def estado():
     f = _fuente()
     df = f["df"]
     if df is None:
         return {"fuente": f["fuente"], "filas": 0, "error": f.get("error_api")}
-    return {"fuente": f["fuente"], "filas": int(len(df)), "prestadores": int(df["prestador_id"].nunique()),
-            "sedes": int(df["sede_id"].nunique()), "municipios": int(df[["departamento", "municipio"]].drop_duplicates().shape[0]),
-            "fecha_corte": fecha_corte(), "actualizado": f["actualizado"], "error_api": f.get("error_api")}
+    if _ESTADO.get("clave") == id(df):
+        return _ESTADO["valor"]
+    valor = {"fuente": f["fuente"], "filas": int(len(df)), "prestadores": int(df["prestador_id"].nunique()),
+             "sedes": int(df["sede_id"].nunique()), "municipios": int(df[["departamento", "municipio"]].drop_duplicates().shape[0]),
+             "fecha_corte": fecha_corte(), "actualizado": f["actualizado"], "error_api": f.get("error_api")}
+    _ESTADO["clave"], _ESTADO["valor"] = id(df), valor
+    return valor
 
 
 # ---------------- resolución de valores ----------------

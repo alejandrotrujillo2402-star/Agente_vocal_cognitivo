@@ -224,6 +224,7 @@ svg{flex:none}
 .escalado-caja{border:1px solid rgba(251,191,140,.35);background:rgba(251,191,140,.05);border-radius:10px;padding:12px 14px;margin-bottom:16px}
 .esc-fila{font-size:13px;line-height:1.5;margin-bottom:6px}.esc-fila b{color:var(--sub);font-family:var(--mono);font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.12em;display:block}
 .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#e6f1f7;color:#06101c;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;opacity:0;transition:.25s;pointer-events:none;z-index:9;max-width:90vw}
+#debugLat{position:fixed;right:12px;bottom:12px;z-index:8;margin:0;padding:8px 10px;max-width:360px;background:#06101ce6;color:#d7ece8;font:12px/1.45 ui-monospace,monospace;border-radius:8px;white-space:pre}
 .toast.ver{opacity:1}
 
 /* ===== pantallas medianas y móviles: orbe arriba, respuesta y mando abajo ===== */
@@ -387,6 +388,7 @@ svg{flex:none}
   </div>
 </aside>
 <div class="toast" id="toast"></div>
+<pre id="debugLat" hidden></pre>
 
 <script src="/static/voz.js"></script>
 <script>
@@ -398,7 +400,8 @@ const HEX = {"var(--h1)":"#7aa7ff","var(--h2)":"#f5a06b","var(--h3)":"#b49cff","
 const DEPTOS = ["Amazonas","Antioquia","Arauca","Atlántico","Bogotá D.C","Bolívar","Boyacá","Caldas","Caquetá","Casanare","Cauca","Cesar","Chocó","Córdoba","Cundinamarca","Guainía","Guaviare","Huila","La Guajira","Magdalena","Meta","Nariño","Norte de Santander","Putumayo","Quindío","Risaralda","San Andrés","Santander","Sucre","Tolima","Valle del Cauca","Vaupés","Vichada"];
 
 const SALUDO_INICIAL = "Hola, ¿en qué puedo ayudarte?";
-const RELLENOS = ["Déjame revisar.", "Un momento, lo consulto."];
+const RELLENOS = ["Claro, un momento."];
+const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
 const ECO_MS = 800;   // semidúplex: lo que llega mientras el agente habla y 800 ms después no cuenta
 const ECO_AUDIO_MS = 300;   // margen sobre la marca de tiempo de cada palabra (eco tardío de Deepgram)
 // Se comparan sin tildes (sinTildes)
@@ -687,6 +690,7 @@ async function iniciar() {
   cargarVocabulario();
   $("btnMic").classList.add("on"); $("btnMic").querySelector("span").textContent = "Terminar conversación";
   medirNivel();
+  S.nivel?.resume?.();
   fetch("/api/calentar", {method: "POST"}).catch(() => {});
   precargarRellenos();
   saludar();
@@ -777,8 +781,7 @@ function manejarDG(m, ws) {
   if (m.type === "Error") return falloDeepgram(m.description);
   if (m.type === "Aviso") { S.avisoDG = m.description || ""; console.warn("Deepgram:", S.avisoDG); return; }
   if (m.type === "UtteranceEnd") {
-    // 1,2 s sin palabras: cierra ya, salvo que hayan llegado palabras más nuevas
-    if (S.turno.length && (m.last_word_end == null || m.last_word_end >= S.finPalabra - 0.05)) programarCierre(0, false);
+    if ((S.turno.length || S.interimTxt) && (m.last_word_end == null || m.last_word_end >= S.finPalabra - 0.05)) cerrarTurno(true);
     return;
   }
   if (m.type === "SpeechStarted") { if (!agenteSuena()) S.vozDetectada = performance.now(); return; }
@@ -799,11 +802,7 @@ function manejarDG(m, ws) {
     start: S.offset + w.start, end: S.offset + w.end, quien: w.speaker ?? 0})), S.voc) : null;
   const tomado = recibirVoz(unir(ps), m.is_final, pal, ps[0]?.speaker ?? 0, "dg", ps.length ? S.recInicio + ps[0].start * 1000 : null);
   if (tomado) S.finPalabra = Math.max(S.finPalabra, ...ps.map(w => w.end || 0));
-  if (m.speech_final && S.turno.length) {
-    // Fin de frase según Deepgram: adelanta el cierre, pero nunca antes de 600 ms desde la última palabra
-    const silencio = ((m.start || 0) + (m.duration || 0) - S.finPalabra) * 1000;
-    programarCierre(Math.max(0, 600 - silencio), false);
-  }
+  if (m.speech_final && (S.turno.length || S.interimTxt)) cerrarTurno(true);
 }
 
 /* Respaldo: reconocimiento del navegador (sin diarización). Un solo reconocedor activo. */
@@ -888,15 +887,14 @@ function programarFinTurno() {
 function programarCierre(ms, reiniciar) {
   const en = performance.now() + ms;
   if (!reiniciar && S.tFin && S.cierreEn <= en) return;   // adelantar nunca retrasa
-  clearTimeout(S.tFin); S.cierreEn = en; S.tFin = setTimeout(cerrarTurno, ms);
+  clearTimeout(S.tFin); S.cierreEn = en; S.tFin = setTimeout(() => cerrarTurno(false), ms);
 }
 
-function cerrarTurno() {
+function cerrarTurno(forzar) {
   clearTimeout(S.tFin); S.tFin = null;
   if (!S.conversando) return;
   if (S.interimTxt) {
-    // aún falta el resultado final de lo último que se dijo: se espera un poco antes de usar el parcial
-    if (performance.now() - S.ultimaVoz < 1500) return programarCierre(300, true);
+    if (!forzar && performance.now() - S.ultimaVoz < 1500) return programarCierre(300, true);
     const t = (S.ultimaVoz - S.inicio) / 1000;
     S.turno.push(...S.interimTxt.split(/\s+/).map(w => ({w, conf: null, start: t, end: t, quien: S.interimQuien})));
     S.interimTxt = "";
@@ -1056,6 +1054,7 @@ async function responder(pregunta) {
   let completo = "", buffer = "", primera = true, ruta = "", silencio = false, relleno = false;
   const pasos = [];
   try {
+    if (lat) lat.preguntar = Math.round(performance.now() - lat.t0);
     const r = await fetch("/api/preguntar", {method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({sesion: S.sesion, pregunta}), signal: ctrl.signal});
     if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "Error del servidor"); }
@@ -1070,19 +1069,21 @@ async function responder(pregunta) {
         if (ev.t === "delta") {
           if (lat && lat.token == null) { lat.token = Math.round(performance.now() - lat.t0); pintarLatencia(lat); }
           completo += ev.x; buffer += ev.x;
-          if (conContenido(completo)) { burbuja().querySelector(".texto").textContent = completo; bajarTrans(); pintarRespuesta(completo, linea); escribiendo(linea, true); }
-          // a voz por frases: la primera en la primera pausa natural (, ; : con ≥25 caracteres); las siguientes en . ? !
-          const re = /[,;:.!?](?=\s)/g; let m;
-          while ((m = re.exec(buffer))) {
-            const trozo = buffer.slice(0, m.index + 1).trim(), fuerte = ".!?".includes(m[0]);
-            if (primera ? trozo.length >= (fuerte ? 8 : 25) : fuerte && trozo.length >= 20) {
-              hablar(trozo, {lat}); buffer = buffer.slice(m.index + 1); primera = false; re.lastIndex = 0;
-            }
-          }
-        } else if (ev.t === "decision") { ruta = ev.x.ruta; pasos.length = 0; pasos.push({tipo: "decision", ...ev.x}); pintarDecisiones(pasos, pregunta); }
+          if (conContenido(completo)) { clearTimeout(S.tRelleno); burbuja().querySelector(".texto").textContent = completo; bajarTrans(); pintarRespuesta(completo, linea); escribiendo(linea, true); }
+          const corte = buffer.match(primera ? /^([\s\S]{8,}?[.!?])|^([\s\S]{40,}?[,;])/ : /^([\s\S]{8,}?[.!?])/);
+          if (corte) { hablar(corte[0].trim(), {lat}); buffer = buffer.slice(corte[0].length); primera = false; }
+        } else if (ev.t === "decision") {
+          ruta = ev.x.ruta;
+          if (lat && lat.enrutador == null) lat.enrutador = Math.round(performance.now() - lat.t0);
+          pasos.length = 0; pasos.push({tipo: "decision", ...ev.x}); pintarDecisiones(pasos, pregunta);
+        }
         else if (ev.t === "consultando") {
-          // el modelo pidió una herramienta: frase de relleno precargada mientras llega la respuesta
-          if (!relleno && !conContenido(completo) && !S.sonoRespuesta) { relleno = true; decirRelleno(); }
+          if (!relleno && !["instantánea", "social", "caché"].includes(ruta) && !conContenido(completo) && !S.sonoRespuesta) {
+            const falta = 800 - (performance.now() - (lat?.t0 || performance.now()));
+            clearTimeout(S.tRelleno);
+            const soltar = () => { if (S.abort === ctrl && !S.sonoRespuesta && !conContenido(completo)) { relleno = true; decirRelleno(); } };
+            if (falta <= 0) soltar(); else S.tRelleno = setTimeout(soltar, falta);
+          }
         } else if (ev.t === "paso") {
           pasos.push(ev.x); pintarDecisiones(pasos, pregunta);
           const h = document.createElement("div"); h.className = "herr";
@@ -1091,7 +1092,11 @@ async function responder(pregunta) {
           burbuja().querySelector(".burbuja").appendChild(h);
         } else if (ev.t === "escalamiento") mostrarEscalamiento(ev.x);
         else if (ev.t === "silencio") silencio = true;
-        else if (ev.t === "fin") { if (!silencio) { pasos.push({tipo: "fin", ...ev.x}); pintarDecisiones(pasos, pregunta); } }
+        else if (ev.t === "fin") {
+          if (lat) lat.srv = ev.x.tiempos || null;
+          if (!silencio) { pasos.push({tipo: "fin", ...ev.x}); pintarDecisiones(pasos, pregunta); }
+          volcarLat(lat);
+        }
         else if (ev.t === "error") console.warn(ev.x);
       }
     }
@@ -1104,6 +1109,7 @@ async function responder(pregunta) {
   } catch (e) {
     if (e.name !== "AbortError") { burbuja().querySelector(".texto").textContent = "No pude responder: " + e.message; pintarRespuesta("No pude responder: " + e.message, linea); toast(e.message); }
   } finally {
+    clearTimeout(S.tRelleno);
     escribiendo(linea, false);
     if (S.abort === ctrl) { S.abort = null; S.pensando = false; }
     if (!S.cola.length && !S.actual) estadoReposo();
@@ -1131,9 +1137,12 @@ function decirRelleno() {
 function hablar(texto, op = {}) {
   texto = String(texto || "").replace(/\s+/g, " ").trim();
   if (!conContenido(texto)) return;   // nunca se lee "..." ni texto vacío
-  const item = {texto, audio: null, relleno: !!op.relleno, lat: op.lat || null};
+  const lat = op.lat || null;
+  const primeraFrase = !!(lat && !op.relleno && lat.frase == null);
+  if (primeraFrase) { lat.frase = lat.tts = Math.round(performance.now() - lat.t0); }
+  const item = {texto, audio: null, relleno: !!op.relleno, lat, primera: primeraFrase};
   if (op.url) item.audio = new Audio(op.url);
-  else if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; }
+  else if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; item.audio.load(); }
   S.cola.push(item);
   if (!S.actual) siguiente();
 }
@@ -1145,10 +1154,11 @@ function siguiente() {
   if (!S.hablando) { S.tramos.push({ini: performance.now(), fin: null}); if (S.tramos.length > 20) S.tramos.shift(); }
   S.hablando = true; S.sonoRespuesta = true; S.vozNav = !it.audio;
   S.textoHablado = it.texto; S.ecoTexto = (S.ecoTexto + " " + it.texto).slice(-1500); estado("hablando");
-  const fin = () => { if (S.actual === it) siguiente(); };
-  const respaldo = () => { if (S.actual !== it) return; it.audio = null; S.vozNav = true; hablarNavegador(it.texto, fin, () => marcarLatencia(it)); };
+  const fin = () => { clearTimeout(it.tope); if (S.actual === it) siguiente(); };
+  const respaldo = () => { if (S.actual !== it) return; clearTimeout(it.tope); it.audio = null; S.vozNav = true; hablarNavegador(it.texto, fin, () => marcarLatencia(it)); };
   if (it.audio) {
-    it.audio.onplaying = () => { marcarLatencia(it); Orbe.voz(it.audio); };
+    if (it.primera) it.tope = setTimeout(() => { if (S.actual === it && !it.sono) respaldo(); }, 600);
+    it.audio.onplaying = () => { it.sono = true; clearTimeout(it.tope); marcarLatencia(it); Orbe.voz(it.audio); };
     it.audio.onended = fin;
     it.audio.onerror = respaldo;
     it.audio.play().catch(respaldo);
@@ -1184,12 +1194,33 @@ function pintarLatencia(l) {
   $("mLat").textContent = `fin de turno → primer token ${ms(l.token)} → primer audio ${ms(l.audio)}`;
   if (S.latencias.length) $("mLatProm").textContent = $("hudProm").textContent = fmtN(Math.round(S.latencias.reduce((a, b) => a + b, 0) / S.latencias.length)) + " ms";
   $("hudToken").textContent = ms(l.token); $("hudAudio").textContent = ms(l.audio);
+  volcarLat(l);
+}
+function volcarLat(l) {
+  if (!l) return;
+  const n = v => v == null ? "—" : String(v).padStart(5) + " ms";
+  const lineas = [
+    "fin de habla → preguntar     " + n(l.preguntar),
+    "fin de habla → enrutador     " + n(l.enrutador),
+    "fin de habla → primer token  " + n(l.token),
+    "fin de habla → primera frase " + n(l.frase),
+    "fin de habla → petición TTS  " + n(l.tts),
+    "fin de habla → primer audio  " + n(l.audio),
+  ];
+  if (l.srv) lineas.push("servidor " + Object.entries(l.srv).map(([k, v]) => k + "=" + v).join("  "));
+  console.log("[latencia]\n" + lineas.join("\n"));
+  if (!DEBUG) return;
+  const el = $("debugLat"); el.hidden = false; el.textContent = lineas.join("\n");
 }
 
 function interrumpir(silencioso) {
   const habia = S.hablando || S.pensando;
   S.abort?.abort(); S.abort = null;
-  for (const it of [S.actual, ...S.cola]) if (it?.audio) { it.audio.onended = it.audio.onerror = it.audio.onplaying = null; it.audio.pause(); it.audio.removeAttribute("src"); it.audio.load(); }
+  clearTimeout(S.tRelleno);
+  for (const it of [S.actual, ...S.cola]) {
+    clearTimeout(it?.tope);
+    if (it?.audio) { it.audio.onended = it.audio.onerror = it.audio.onplaying = null; it.audio.pause(); it.audio.removeAttribute("src"); it.audio.load(); }
+  }
   S.cola = []; S.actual = null;
   try { speechSynthesis.cancel(); } catch {}
   if (habia && S.lineaAgente && !silencioso) S.lineaAgente.classList.add("interrumpida");

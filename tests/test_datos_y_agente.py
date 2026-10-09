@@ -175,11 +175,11 @@ async def test_enrutador_social_sin_herramientas(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_saludo_con_pregunta_usa_herramientas(monkeypatch):
-    stream, vistos = guion("Hay 3 sedes.")
-    monkeypatch.setattr(llm, "stream", stream)
+async def test_saludo_con_pregunta_resuelve_la_cifra_sin_llm(monkeypatch):
+    sin_llm(monkeypatch)
     ev = await correr("a9", "Hola, ¿cuántas sedes hay en Caldas?")
-    assert ev[0]["x"]["ruta"] == "herramientas" and vistos[0]["tools"]
+    texto = "".join(e["x"] for e in ev if e["t"] == "delta")
+    assert ev[0]["x"]["ruta"] == "directa" and texto == "Hay 3 sedes de IPS en Caldas."
 
 
 def sin_llm(monkeypatch):

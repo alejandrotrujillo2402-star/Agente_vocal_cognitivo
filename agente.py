@@ -274,9 +274,12 @@ def construir_mensajes(s: Sesion, pregunta: str, escalar):
         estado += (f"\n- ESCALAR (motivo: {escalar}): llama escalar_a_humano ahora con un resumen de lo que el "
                    "usuario necesita; luego dile con empatía que un analista continuará y da el número de caso.")
     if es_documento(s):
-        base = f"{SISTEMA_DOC}\n\n{s.fuente['doc'].ficha()}"
+        base = f"{SISTEMA_DOC}\n\n{s.fuente['doc'].ficha()[:700]}"
     else:
-        base = f"{SISTEMA}\n\n{datos_ips.PROMPT_DATOS}"
+        base = ("Responde en 1 o 2 frases habladas, con dígitos y sin markdown. Cifras solo desde herramientas. "
+                "Si hay error, corrige con la sugerencia. Si el dato no está, dilo.\n"
+                "Ficha: prestador ≠ sede. Nivel solo en públicas. Capacidad: CAMAS, CONSULTORIOS, SALAS, AMBULANCIAS. "
+                "La UCI va en descripcion_capacidad. No hay médicos, EPS ni precios.")
         if s.fuente:
             base += (f"\n- FUENTE ACTIVA: el archivo {s.fuente['nombre']} que cargó el usuario, con las mismas columnas "
                      "del dataset; responde con él, no con la API.")
@@ -307,6 +310,7 @@ def respuesta_inmediata(s: Sesion, pregunta: str):
     return texto
 
 
+<<<<<<< HEAD
 FUERA_ALCANCE = re.compile(r"\b(medic[oa]s?|doctor(es)?|especialista|especialidad|eps|afiliad\w*|precio|cuesta|costo|valor de la consulta|"
                            r"citas?|calidad|ocupacion|enfermer[oa]s?)\b")
 BUSCA_IPS = re.compile(r"\b(telefono|direccion|gerente|nit|contacto|ficha|donde queda|ubicad[oa])\b")
@@ -343,6 +347,118 @@ def ruta(pregunta, escalar, s: Sesion | None = None):
     if not escalar and SOCIAL.fullmatch(plano(pregunta)):
         return "social", llm.MODELO_RAPIDO, None
     return "herramientas", llm.MODELO, herramientas_relevantes(pregunta, s) + [TOOL_ESCALAR]
+=======
+_PREFIJO = re.compile(r"^(?:(?:hola|hey|buenas|buen dia|buenos dias|buenas tardes|buenas noches|espera|ok|okay|vale|bueno|pues|claro)\b[\s,]*)+")
+_REPETIR = re.compile(r"^(?:repit(?:e|elo|emelo)|dilo otra vez|otra vez|lo mismo|puedes repetir(?:lo)?)$")
+_CIFRA = re.compile(r"cuant[oa]s?\s+(.+?)\s+en\s+(.+)")
+CACHE: "OrderedDict[tuple, tuple]" = OrderedDict()
+TTL_CACHE = 30 * 60
+
+
+def respuesta_repetir(s: Sesion, pregunta: str):
+    """«Repite» vuelve a decir la última respuesta, sin llamar al modelo."""
+    if not _REPETIR.fullmatch(plano(pregunta)):
+        return None
+    previa = next((m["content"] for m in reversed(s.historial) if m["role"] == "assistant" and tiene_contenido(m["content"])), "")
+    return previa or "Aún no tengo nada que repetir."
+
+
+def intencion_cifra(pregunta: str):
+    """«Cuántas sedes hay en Caldas» -> (métrica, filtros extra, lugar). None si la frase no es una sola cifra."""
+    p = _PREFIJO.sub("", plano(pregunta)).strip()
+    m = _CIFRA.fullmatch(p)
+    if not m or re.search(r"\b(o|ranking|top|cuales|mas)\b", p):
+        return None
+    cosa, lugar = m.group(1), m.group(2).strip()
+    if not lugar or re.search(r"\b(o|y)\b", lugar):
+        return None
+    t = " ".join(w for w in re.sub(r"\b(de|del|la|las|los|hay|existen|tiene|tienen|un|una)\b", " ", cosa).split())
+    if re.search(r"\buci\b|\bintensiv", t):
+        return "suma_capacidad", {"descripcion_capacidad": t}, lugar
+    if "ambulancia" in t:
+        extra = {"grupo_capacidad": "AMBULANCIAS"}
+        if "medicaliz" in t:
+            extra["descripcion_capacidad"] = "medicalizada"
+        return "suma_capacidad", extra, lugar
+    for palabra, grupo in (("cama", "CAMAS"), ("consultorio", "CONSULTORIOS"), ("quirofano", "SALAS"), ("sala", "SALAS")):
+        if palabra in t:
+            return "suma_capacidad", {"grupo_capacidad": grupo}, lugar
+    if "sede" in t:
+        return "num_sedes", {}, lugar
+    if "prestador" in t or re.search(r"\bips\b", t):
+        return "num_prestadores", {}, lugar
+    return None
+
+
+def _frase_cifra(metrica, n, lugar, extra):
+    sitio = " ".join(w.capitalize() for w in str(lugar).split()) or "Colombia"
+    ntxt = datos_ips.miles(n)
+    if metrica == "num_sedes":
+        return f"Hay {ntxt} sedes de IPS en {sitio}."
+    if metrica == "num_prestadores":
+        return f"Hay {ntxt} prestadores de salud en {sitio}."
+    det = (extra.get("descripcion_capacidad") or "").lower()
+    grupo = (extra.get("grupo_capacidad") or "unidades").lower()
+    if "uci" in det or "intensiv" in det:
+        quien = "de adultos" if "adult" in det else "pediátricas" if "pediat" in det else "neonatales" if "neonat" in det else ""
+        cosa = ("camas de UCI " + quien).strip()
+    elif "medicaliz" in det:
+        cosa = "ambulancias medicalizadas"
+    else:
+        cosa = grupo
+    return f"Hay {ntxt} {cosa} en {sitio}."
+
+
+def _clave_cache(s: Sesion, pregunta: str):
+    return (plano(pregunta), json.dumps(s.entidades, sort_keys=True, ensure_ascii=False), id(s.fuente) if s.fuente else 0)
+
+
+def leer_cache(s: Sesion, pregunta: str):
+    clave = _clave_cache(s, pregunta)
+    hit = CACHE.get(clave)
+    if not hit:
+        return None
+    if time.time() - hit[0] > TTL_CACHE:
+        CACHE.pop(clave, None)
+        return None
+    CACHE.move_to_end(clave)
+    return hit[1]
+
+
+def guardar_cache(s: Sesion, pregunta: str, texto: str):
+    if not tiene_contenido(texto):
+        return
+    CACHE[_clave_cache(s, pregunta)] = (time.time(), texto)
+    while len(CACHE) > 200:
+        CACHE.popitem(last=False)
+
+
+def herramientas_para(pregunta, s: Sesion | None):
+    """Solo las herramientas que la frase puede necesitar; un documento conserva las suyas."""
+    base = herramientas(s)
+    if es_documento(s):
+        return base + [TOOL_ESCALAR]
+    p = plano(pregunta)
+    nombres = set()
+    if re.search(r"\bcuant[oa]s?\b|\branking\b|\btop\b", p):
+        nombres.add("consultar_estadistica")
+    if re.search(r"\b(clinica|hospital|prestador)\b", p):
+        nombres.update(("buscar_ips", "listar_valores"))
+    if re.search(r"\b(contiene|dataset|que datos)\b", p):
+        nombres.add("info_dataset")
+    if not nombres:
+        elegidas = base
+    else:
+        elegidas = [t for t in base if t["function"]["name"] in nombres] or base
+    return elegidas + [TOOL_ESCALAR]
+
+
+def ruta(pregunta, escalar, s: Sesion | None = None):
+    """Enrutador por reglas: charla social -> modelo rápido sin herramientas; lo demás -> modelo con las herramientas útiles."""
+    if not escalar and SOCIAL.fullmatch(plano(pregunta)):
+        return "social", llm.MODELO_RAPIDO, None
+    return "herramientas", llm.MODELO, herramientas_para(pregunta, s)
+>>>>>>> a34784a64e82256fa1893ce560b0aa990a81407f
 
 
 def estado_resultado(res):
@@ -444,11 +560,38 @@ def comando_repetir(s: Sesion, pregunta: str):
 
 # ---------------- ciclo de decisión ----------------
 
-def _fin(t0, s: Sesion, modelo, primer_token=None, consultas=0, exitos=0):
+def _fin(t0, s: Sesion, modelo, primer_token=None, consultas=0, exitos=0, tiempos=None):
     fin = time.perf_counter()
-    return {"t": "fin", "x": {"ms_total": int((fin - t0) * 1000),
-                              "ms_primer_token": int(((primer_token or fin) - t0) * 1000),
-                              "modelo": modelo, "consultas": consultas, "exitos": exitos, "fallos_seguidos": s.fallos}}
+    x = {"ms_total": int((fin - t0) * 1000),
+         "ms_primer_token": int(((primer_token or fin) - t0) * 1000),
+         "modelo": modelo, "consultas": consultas, "exitos": exitos, "fallos_seguidos": s.fallos}
+    if tiempos:
+        tiempos.setdefault("fin", x["ms_total"])
+        x["tiempos"] = dict(tiempos)
+        print("latencia", " ".join(f"{k}={v}" for k, v in tiempos.items()))
+    return {"t": "fin", "x": x}
+
+
+def _anotar(s: Sesion, pregunta: str, texto: str):
+    s.historial += [{"role": "user", "content": pregunta}, {"role": "assistant", "content": texto[:800]}]
+    s.historial[:] = s.historial[-12:]
+
+
+async def _cifra_directa(s: Sesion, pregunta: str):
+    """Ejecuta la consulta si la frase es «cuántos X en Y». None si no es una sola cifra clara."""
+    intent = intencion_cifra(pregunta)
+    if not intent or s.fuente:
+        return None
+    metrica, extra, lugar = intent
+    for campo in ("departamento", "municipio"):
+        args = {"metrica": metrica, "filtros": {campo: lugar, **extra}}
+        res = await asyncio.to_thread(ejecutar_herramienta, s, "consultar_estadistica", args)
+        if res.get("error") or res.get("sospechoso") or not isinstance(res.get("resultado"), int):
+            continue
+        actualizar_entidades(s, res)
+        sitio = (res.get("filtros_aplicados") or {}).get(campo) or lugar
+        return _frase_cifra(metrica, res["resultado"], sitio, extra), args, res
+    return None
 
 
 async def responder(sid: str, pregunta: str, modelo: str | None = None):
@@ -456,25 +599,38 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
     No espera el análisis emocional del turno: usa la última emoción ya disponible."""
     s = sesion(sid)
     t0 = time.perf_counter()
+<<<<<<< HEAD
     cuenta = {}   # tokens de esta pregunta (todas las llamadas del ciclo)
     peticion = {"tipo": "pregunta", "cuenta": cuenta, "max_tokens": MAX_TOKENS}
     llm.PETICION.set(peticion)
+=======
+    tiempos = {}
+
+    def marca(nombre):
+        tiempos[nombre] = int((time.perf_counter() - t0) * 1000)
+
+    marca("llegada")
+>>>>>>> a34784a64e82256fa1893ce560b0aa990a81407f
 
     if pide_silencio(pregunta):
+        marca("enrutador")
         yield {"t": "silencio"}
-        yield _fin(t0, s, "ninguno")
+        yield _fin(t0, s, "ninguno", tiempos=tiempos)
         return
 
-    inmediata = respuesta_inmediata(s, pregunta)
+    inmediata = respuesta_inmediata(s, pregunta) or respuesta_repetir(s, pregunta)
     if inmediata:
+        marca("enrutador")
+        marca("primer_token")
+        marca("primera_frase")
         yield {"t": "decision", "x": {"ruta": "instantánea", "modelo": "plantilla", "escalar": None,
                                       "emocion": estado_emocional(s), "contexto": dict(s.entidades)}}
         yield {"t": "delta", "x": inmediata}
-        s.historial += [{"role": "user", "content": pregunta}, {"role": "assistant", "content": inmediata}]
-        s.historial[:] = s.historial[-12:]
-        yield _fin(t0, s, "plantilla", primer_token=time.perf_counter())
+        _anotar(s, pregunta, inmediata)
+        yield _fin(t0, s, "plantilla", primer_token=time.perf_counter(), tiempos=tiempos)
         return
 
+<<<<<<< HEAD
     def sin_modelo(texto, ruta_, modelo_):
         """Respuesta sin llamar al modelo (repetir, caché): mismo flujo de eventos que una respuesta normal."""
         yield {"t": "decision", "x": {"ruta": ruta_, "modelo": modelo_, "escalar": None,
@@ -492,6 +648,41 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
         for ev in sin_modelo(repetir, "instantánea", "plantilla"):
             yield ev
         return
+=======
+    if not motivo_escalar(s, pregunta):
+        cacheada = leer_cache(s, pregunta)
+        if cacheada:
+            marca("enrutador")
+            marca("primer_token")
+            marca("primera_frase")
+            yield {"t": "decision", "x": {"ruta": "caché", "modelo": "caché", "escalar": None,
+                                          "emocion": estado_emocional(s), "contexto": dict(s.entidades),
+                                          "fuente": s.fuente["nombre"] if s.fuente else "API datos.gov.co",
+                                          "fuente_tipo": s.fuente["tipo"] if s.fuente else "api"}}
+            yield {"t": "delta", "x": cacheada}
+            _anotar(s, pregunta, cacheada)
+            yield _fin(t0, s, "caché", primer_token=time.perf_counter(), tiempos=tiempos)
+            return
+        directa = await _cifra_directa(s, pregunta)
+        if directa:
+            texto, args, res = directa
+            marca("enrutador")
+            yield {"t": "decision", "x": {"ruta": "directa", "modelo": "plantilla", "escalar": None,
+                                          "emocion": estado_emocional(s), "contexto": dict(s.entidades),
+                                          "fuente": s.fuente["nombre"] if s.fuente else "API datos.gov.co",
+                                          "fuente_tipo": s.fuente["tipo"] if s.fuente else "api"}}
+            yield {"t": "consultando", "x": {"herramientas": ["consultar_estadistica"]}}
+            yield {"t": "paso", "x": {"n": 1, "herramienta": "consultar_estadistica", "args": args, "estado": "ok",
+                                      "resultado": resumen_resultado(res)}}
+            marca("primer_token")
+            marca("primera_frase")
+            yield {"t": "delta", "x": texto}
+            s.fallos = 0
+            _anotar(s, pregunta, texto)
+            guardar_cache(s, pregunta, texto)
+            yield _fin(t0, s, "plantilla", primer_token=time.perf_counter(), consultas=1, exitos=1, tiempos=tiempos)
+            return
+>>>>>>> a34784a64e82256fa1893ce560b0aa990a81407f
 
     escalar = motivo_escalar(s, pregunta)
     clave = clave_cache(s, pregunta)
@@ -502,6 +693,7 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
             yield ev
         return
     tipo_ruta, modelo_usado, tools = ruta(pregunta, escalar, s)
+    marca("enrutador")
     if modelo and tools:
         modelo_usado = modelo
     mensajes = construir_mensajes(s, pregunta, escalar)
@@ -522,9 +714,14 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
         try:
             async for tipo, x in llm.stream(mensajes, None if forzar_cierre else herr_paso, modelo=modelo_usado):
                 if tipo == "texto":
-                    primer_token = primer_token or time.perf_counter()
+                    if primer_token is None:
+                        primer_token = time.perf_counter()
+                        marca("primer_token")
                     texto += x
-                    yield {"t": "delta", "x": re.sub(r"[*#_`>|]+", "", x)}
+                    limpio = re.sub(r"[*#_`>|]+", "", x)
+                    if "primera_frase" not in tiempos and re.search(r"[.!?]", texto):
+                        marca("primera_frase")
+                    yield {"t": "delta", "x": limpio}
                 elif tipo == "tools":
                     llamadas = x
         except Exception as e:
@@ -570,9 +767,13 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
                                       "resultado": resumen_resultado(res)}}
             estados.append(estado)
             mensajes.append({"role": "tool", "tool_call_id": c["id"],
+<<<<<<< HEAD
                              "content": compactar(res)[:6000 if es_documento(s) else 2500]})
         # todo salió bien: la siguiente llamada solo redacta, sin reenviar los esquemas de herramientas
         herr_paso = None if estados and all(e == "ok" for e in estados) else tools
+=======
+                             "content": json.dumps(res, ensure_ascii=False, default=str)[:6000 if es_documento(s) else 700]})
+>>>>>>> a34784a64e82256fa1893ce560b0aa990a81407f
         if paso == MAX_PASOS:
             # Cierre forzado: se pasan los resultados como texto plano para que el modelo no intente otra herramienta.
             resultados = [m["content"] for m in mensajes if m["role"] == "tool"][-4:]
@@ -586,9 +787,18 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
     if tiene_contenido(texto) and tipo_ruta == "herramientas" and not s.ticket and (exitos or not consultas):
         guardar_cache(clave, texto.strip(), s.entidades)
     if tiene_contenido(texto):  # "..." o vacío no entra al historial
+<<<<<<< HEAD
         s.historial += [{"role": "user", "content": pregunta}, {"role": "assistant", "content": texto[:800]}]
         s.historial[:] = s.historial[-12:]
     llm.registrar_peticion("pregunta", pregunta, cuenta)
     fin = _fin(t0, s, llm.ULTIMO_MODELO["nombre"], primer_token, consultas, exitos)
     fin["x"]["tokens"] = {"prompt": cuenta.get("prompt_tokens", 0), "completion": cuenta.get("completion_tokens", 0)}
     yield fin
+=======
+        _anotar(s, pregunta, texto)
+        if not escalar and (not consultas or exitos):
+            guardar_cache(s, pregunta, texto)
+    if "primera_frase" not in tiempos and tiene_contenido(texto):
+        marca("primera_frase")
+    yield _fin(t0, s, llm.ULTIMO_MODELO["nombre"], primer_token, consultas, exitos, tiempos)
+>>>>>>> a34784a64e82256fa1893ce560b0aa990a81407f
