@@ -17,8 +17,8 @@ import agente
 import datos_ips
 from app import analizar_texto
 
-MODELOS = sys.argv[1:] or ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"]
-HONESTO = re.compile(r"no (aparece|esta|está|tengo|contiene|registra|incluye|dispon|cuento|hay (datos|informaci))|no se registra|fuera de|no forma parte")
+MODELOS = sys.argv[1:] or ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+HONESTO = re.compile(r"no (aparece|esta|está|tengo|contiene|registra|incluye|dispon|cuento|exist|hay (datos|informaci))|no se registra|solo se registra|sólo se registra|fuera de|no forma parte")
 EMPATIA = re.compile(r"entiendo|lamento|disculp|comprendo|siento")
 
 
@@ -78,8 +78,9 @@ async def main():
         res = []
         for c in casos:
             res.append(await un_caso(m, c))
-            print(f"{m:28} {c['id']:4} {'OK ' if res[-1]['ok'] else 'NO '} {res[-1]['latencia_primer_token']}s  {res[-1]['respuesta'][:90]}")
-            await asyncio.sleep(1.5)   # respeta el límite por minuto del proveedor
+            r = res[-1]
+            print(f"{m:22} {c['id']:3} {'OK' if r['ok'] else 'NO'} {r['latencia_primer_token']:>5}s {'>'.join(e[:3] for e in r['estados']) or '-':18} {r['respuesta'][:80]}")
+            await asyncio.sleep(8)   # respeta el límite por minuto del proveedor
         salida[m] = res
         pct = lambda xs: f"{100 * sum(xs) / len(xs):.0f}%" if xs else "—"
         tabla.append([m, pct([r["ok"] for r in res]),

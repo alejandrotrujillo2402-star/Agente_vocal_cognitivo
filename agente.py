@@ -200,13 +200,24 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
     for paso in range(1, MAX_PASOS + 2):
         forzar_cierre = paso > MAX_PASOS
         llamadas = None
-        async for tipo, x in llm.stream(mensajes, None if forzar_cierre else tools, modelo=modelo_usado):
-            if tipo == "texto":
-                primer_token = primer_token or time.perf_counter()
-                texto += x
-                yield {"t": "delta", "x": re.sub(r"[*#_`>|]+", "", x)}
-            else:
-                llamadas = x
+        try:
+            async for tipo, x in llm.stream(mensajes, None if forzar_cierre else tools, modelo=modelo_usado):
+                if tipo == "texto":
+                    primer_token = primer_token or time.perf_counter()
+                    texto += x
+                    yield {"t": "delta", "x": re.sub(r"[*#_`>|]+", "", x)}
+                else:
+                    llamadas = x
+        except Exception as e:
+            # El proveedor rechazó la llamada (p. ej. parámetros inválidos): el agente se corrige y reintenta.
+            msg = str(e)
+            if "tool" not in msg.lower() or forzar_cierre or texto:
+                raise
+            yield {"t": "paso", "x": {"n": paso, "herramienta": "(llamada rechazada)", "args": {}, "estado": "error",
+                                      "resultado": "Parámetros inválidos: el agente reformula la consulta"}}
+            mensajes.append({"role": "system", "content": "Tu llamada anterior a la herramienta tenía parámetros "
+                             "inválidos. Vuelve a intentarlo usando solo los parámetros del esquema, con valores de texto simples."})
+            continue
         if not llamadas:
             break
         mensajes.append({"role": "assistant", "content": "", "tool_calls": [
@@ -236,7 +247,11 @@ async def responder(sid: str, pregunta: str, modelo: str | None = None):
             mensajes.append({"role": "tool", "tool_call_id": c["id"],
                              "content": json.dumps(res, ensure_ascii=False, default=str)[:3500]})
         if paso == MAX_PASOS:
-            mensajes.append({"role": "system", "content": "Ya no hay más consultas. Responde ahora con lo que tienes, con honestidad."})
+            # Cierre forzado: se pasan los resultados como texto plano para que el modelo no intente otra herramienta.
+            resultados = [m["content"] for m in mensajes if m["role"] == "tool"][-4:]
+            mensajes = [mensajes[0], {"role": "user", "content": (
+                f"PREGUNTA: {pregunta}\n\nRESULTADOS DE LAS CONSULTAS YA HECHAS:\n" + "\n".join(resultados) +
+                "\n\nYa no hay más consultas. Responde ahora en voz, con honestidad, usando solo estos resultados.")}]
 
     if consultas:
         s.fallos = 0 if exitos else s.fallos + 1

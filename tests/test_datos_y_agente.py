@@ -33,6 +33,17 @@ def test_valor_mal_escrito_devuelve_sugerencias():
     assert r["error"] == "valor_no_encontrado"
 
 
+def test_sumar_capacidad_sin_grupo_obliga_a_corregir():
+    r = E("consultar_estadistica", {"metrica": "suma_capacidad", "filtros": {"municipio": "Manizales"}})
+    assert r["error"] == "falta_grupo_capacidad" and "CAMAS" in r["sugerencias"]
+
+
+def test_esquemas_aceptan_null_en_opcionales():
+    p = datos_ips.TOOLS[0]["function"]["parameters"]["properties"]
+    assert "null" in p["agrupar_por"]["type"] and "null" in p["filtros"]["properties"]["municipio"]["type"]
+    assert E("consultar_estadistica", {"metrica": "num_sedes", "agrupar_por": None, "filtros": {"municipio": None}})["resultado"] == 5
+
+
 def test_nivel_en_privadas_es_sospechoso():
     r = E("consultar_estadistica", {"metrica": "num_prestadores", "filtros": {"naturaleza": "Privada", "nivel_atencion": "3"}})
     assert r["resultado"] == 0 and r["sospechoso"] and "nivel" in r["recomendacion"]
@@ -46,7 +57,8 @@ def test_buscar_ips_tolerante():
 
 def test_ejecutar_nunca_lanza():
     assert "error" in E("no_existe", {})
-    assert "error" in E("consultar_estadistica", {"parametro_raro": 1})
+    assert E("consultar_estadistica", {"parametro_raro": 1})["resultado"] == 5   # tolera parámetros extra
+    assert E("consultar_estadistica", {"metrica": "num_sedes", "top_n": "3", "filtros": {"nivel_atencion": 3}})["resultado"] == 1
 
 
 def test_brief_y_casos_de_evaluacion():
@@ -88,6 +100,22 @@ async def test_se_corrige_ante_error(monkeypatch):
     assert "".join(e["x"] for e in ev if e["t"] == "delta") == "En Manizales hay 2 sedes."
     assert agente.sesion("a1").entidades["municipio"] == "manizales"
     assert ev[-1]["x"]["exitos"] == 1 and agente.sesion("a1").fallos == 0
+
+
+@pytest.mark.anyio
+async def test_se_recupera_si_el_proveedor_rechaza_la_llamada(monkeypatch):
+    llamadas = {"n": 0}
+
+    async def stream(messages, tools=None, modelo=None):
+        llamadas["n"] += 1
+        if llamadas["n"] == 1:
+            raise RuntimeError("Tool call validation failed: parameters for tool consultar_estadistica")
+        yield "texto", "Hay 5 sedes."
+        
+    monkeypatch.setattr(llm, "stream", stream)
+    ev = await correr("a8", "¿cuántas sedes hay?")
+    assert [e["x"]["estado"] for e in ev if e["t"] == "paso"] == ["error"]
+    assert "".join(e["x"] for e in ev if e["t"] == "delta") == "Hay 5 sedes."
 
 
 @pytest.mark.anyio

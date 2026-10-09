@@ -185,8 +185,12 @@ def _filtrar(df, f, notas):
 
 # ---------------- herramientas ----------------
 
-def consultar_estadistica(metrica="num_sedes", filtros=None, agrupar_por=None, top_n=10):
+def consultar_estadistica(metrica="num_sedes", filtros=None, agrupar_por=None, top_n=10, **_):
     df = _df()
+    top_n = int(top_n or 10)
+    if isinstance(filtros, str):
+        import json as _j
+        filtros = _j.loads(filtros or "{}")
     notas = []
     sub, aplicados = _filtrar(df, filtros or {}, notas)
     if sub is None:
@@ -204,7 +208,10 @@ def consultar_estadistica(metrica="num_sedes", filtros=None, agrupar_por=None, t
 
     out = {"metrica": metrica, "filtros_aplicados": aplicados, "fecha_corte": fecha_corte()}
     if metrica == "suma_capacidad" and not (filtros or {}).get("grupo_capacidad") and not (filtros or {}).get("descripcion_capacidad") and agrupar_por not in ("grupo_capacidad", "descripcion_capacidad"):
-        notas.append("Sumar capacidad sin grupo mezcla camas, consultorios, ambulancias, etc.")
+        # sumar camas + consultorios + ambulancias no tiene sentido: se obliga a corregir
+        return {"error": "falta_grupo_capacidad", "campo": "filtros.grupo_capacidad",
+                "sugerencias": ["CAMAS", "CONSULTORIOS", "SALAS", "AMBULANCIAS", "CAMILLAS", "UNIDAD MOVIL", "SILLAS"],
+                "recomendacion": "Repite la consulta con filtros.grupo_capacidad (por ejemplo CAMAS) o agrupa por grupo_capacidad."}
     if col_grupo:
         serie = sub.groupby(col_grupo).apply(medir, include_groups=False).sort_values(ascending=False)
         out["resultado"] = {str(k): int(v) for k, v in serie.head(top_n).items()}
@@ -223,7 +230,7 @@ def consultar_estadistica(metrica="num_sedes", filtros=None, agrupar_por=None, t
     return out
 
 
-def buscar_ips(nombre, municipio=None, departamento=None, limite=3):
+def buscar_ips(nombre, municipio=None, departamento=None, limite=3, **_):
     df = _df()
     n = norm(nombre)
     sub = df
@@ -254,7 +261,7 @@ def buscar_ips(nombre, municipio=None, departamento=None, limite=3):
             "filtros_aplicados": {"municipio": municipio, "departamento": departamento}, "fecha_corte": fecha_corte()}
 
 
-def listar_valores(columna, contiene=None, limite=15):
+def listar_valores(columna, contiene=None, limite=15, **_):
     df = _df()
     col = {"departamento": "departamento", "municipio": "municipio", "naturaleza": "naturaleza",
            "grupo_capacidad": "nom_grupo_capacidad", "descripcion_capacidad": "nom_descripcion_capacidad",
@@ -267,7 +274,7 @@ def listar_valores(columna, contiene=None, limite=15):
     return {"columna": columna, "valores": list(vals.index[:limite]), "total_distintos": int(len(vals)), "fecha_corte": fecha_corte()}
 
 
-def info_dataset():
+def info_dataset(**_):
     return {**estado(), "contiene": "IPS (prestadores y sedes) por departamento y municipio, naturaleza, nivel de atención (solo públicas), datos de contacto y capacidad instalada (camas, consultorios, salas, ambulancias, camillas, sillas, unidades móviles).",
             "no_contiene": "médicos, especialidades, EPS, precios, calidad, citas, ocupación ni datos posteriores a la fecha de corte."}
 
@@ -290,20 +297,20 @@ def ejecutar(nombre, args):
 
 _FILTROS = {"type": "object", "properties": {
     "departamento": {"type": "string"}, "municipio": {"type": "string"},
-    "naturaleza": {"type": "string", "enum": ["Pública", "Privada", "Mixta"]},
-    "nivel_atencion": {"type": "string", "enum": ["1", "2", "3"]},
-    "grupo_capacidad": {"type": "string", "enum": ["CAMAS", "CONSULTORIOS", "SALAS", "AMBULANCIAS", "CAMILLAS", "UNIDAD MOVIL", "SILLAS"]},
+    "naturaleza": {"type": "string", "description": "Pública, Privada o Mixta"},
+    "nivel_atencion": {"type": ["string", "integer"], "description": "1, 2 o 3 (solo públicas)"},
+    "grupo_capacidad": {"type": "string", "description": "CAMAS, CONSULTORIOS, SALAS, AMBULANCIAS, CAMILLAS, UNIDAD MOVIL o SILLAS"},
     "descripcion_capacidad": {"type": "string", "description": "Ej: Adultos, Pediátrica, uci adultos, Básica, Medicalizada"},
-    "incluir_distritos": {"type": "boolean"}}}
+    "incluir_distritos": {"type": ["boolean", "string"]}}}
 
 TOOLS = [
     {"type": "function", "function": {"name": "consultar_estadistica",
-     "description": "Cifras exactas: número de prestadores, de sedes o suma de capacidad instalada, con filtros y ranking opcional.",
+     "description": "Cifras exactas: número de prestadores, de sedes o suma de capacidad instalada (camas, ambulancias...: indica SIEMPRE filtros.grupo_capacidad al sumar), con filtros y ranking opcional.",
      "parameters": {"type": "object", "properties": {
          "metrica": {"type": "string", "enum": ["num_prestadores", "num_sedes", "suma_capacidad"]},
          "filtros": _FILTROS,
          "agrupar_por": {"type": "string", "enum": ["departamento", "municipio", "naturaleza", "nivel_atencion", "grupo_capacidad", "descripcion_capacidad"]},
-         "top_n": {"type": "integer"}}, "required": ["metrica"]}}},
+         "top_n": {"type": ["integer", "string"]}}, "required": ["metrica"]}}},
     {"type": "function", "function": {"name": "buscar_ips",
      "description": "Ficha de una IPS por nombre (tolera errores): sede, contacto, gerente, nivel y capacidad.",
      "parameters": {"type": "object", "properties": {"nombre": {"type": "string"}, "municipio": {"type": "string"},
@@ -317,6 +324,23 @@ TOOLS = [
      "description": "Qué contiene y qué no contiene el dataset, totales y fecha de corte.",
      "parameters": {"type": "object", "properties": {}}}},
 ]
+
+def _permitir_null(esquema):
+    props = esquema.get("properties", {})
+    req = set(esquema.get("required", []))
+    for k, v in props.items():
+        if v.get("type") == "object":
+            _permitir_null(v)
+        if k not in req:
+            t = v.get("type")
+            tipos = t if isinstance(t, list) else [t]
+            if "null" not in tipos:
+                v["type"] = tipos + ["null"]
+            v.pop("enum", None) if k != "metrica" else None
+
+
+for _t in TOOLS:
+    _permitir_null(_t["function"]["parameters"])
 
 PROMPT_DATOS = """FICHA DEL DATASET
 - Cada fila es una sede con un tipo de capacidad. Prestador (la institución, con NIT) es distinto de sede (cada punto de atención). "¿Cuántas IPS?" se responde con prestadores y se aclara; nunca se cuentan filas.
