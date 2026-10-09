@@ -234,6 +234,8 @@ def para_voz(texto):
     texto = texto.replace("%", " por ciento")
     # "1 646" con espacio fino o no separable como separador de miles -> "1.646" (si no, se lee "uno seiscientos...")
     texto = re.sub(r"(?<=\d)[   ](?=\d{3}\b)", ".", texto)
+    # también con espacio normal o coma ("1 245", "1,245"), solo si el grupo final tiene exactamente 3 dígitos
+    texto = re.sub(r"(?<!\d)(\d{1,3})((?:[ ,]\d{3})+)(?![\d,])", lambda m: m.group(1) + re.sub(r"[ ,]", ".", m.group(2)), texto)
     texto = re.sub(r"(\d[\d.]*),(\d+)", decimal, texto)
     texto = re.sub(r"\d{1,3}(?:\.\d{3})+|\d+", entero, texto)
     texto = re.sub(r"\bveintiuno (mil|millones)", r"veintiún \1", texto)

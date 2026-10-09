@@ -1130,7 +1130,9 @@ function decirRelleno() {
 
 /* cola de voz: cada frase se pide al TTS en paralelo y se reproduce en orden */
 function hablar(texto, op = {}) {
-  texto = String(texto || "").replace(/\s+/g, " ").trim();
+  // "1 245" con espacio fino o no separable = miles: se pasa a "1.245" antes de normalizar espacios
+  // (si no, llega "1 245" y la voz dice "uno doscientos cuarenta y cinco")
+  texto = String(texto || "").replace(/(\d)[\u00a0\u202f\u2009](?=\d{3}(?!\d))/g, "$1.").replace(/\s+/g, " ").trim();
   if (!conContenido(texto)) return;   // nunca se lee "..." ni texto vacío
   // id por frase: la misma frase de la misma respuesta nunca se encola dos veces
   const clave = texto + "|" + (op.lat ? op.lat.t0 : op.relleno ? "relleno" : "");
