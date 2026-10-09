@@ -106,7 +106,14 @@ select:focus,.campo:focus{border-color:var(--acc)}
 .quien{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--c,var(--h1));margin-bottom:3px;flex-wrap:wrap}
 .quien .canal{color:var(--mute);font-weight:600;font-size:11px}
 .texto{line-height:1.55;font-size:14.5px;white-space:pre-wrap;word-break:break-word}
-.linea.interim .texto{color:var(--mute);font-style:italic}
+.linea.interim .canal{font-style:italic}
+.texto .parcial{color:var(--mute);font-style:italic}
+.texto .dudosa{text-decoration:underline dotted;text-decoration-color:var(--mute);text-underline-offset:3px;cursor:help}
+.quien .nombre.editable{cursor:pointer}
+.quien .nombre[contenteditable="true"]{outline:1px dashed var(--c);outline-offset:2px;cursor:text}
+.canal.refinado{color:var(--acc)}
+.vumetro{width:6px;height:64px;border-radius:3px;background:var(--line2);position:relative;overflow:hidden;flex:none}
+.vumetro i{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--acc2);border-radius:3px;transition:height .08s linear}
 .linea.interrumpida .texto:after{content:"  [interrumpido]";color:var(--mute);font-size:12px}
 .senti{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
 .senti.positivo{background:#dcfce7;color:var(--pos)}.senti.neutral{background:#eef2f5;color:var(--neu)}.senti.negativo{background:#fee2e2;color:var(--neg)}
@@ -199,6 +206,7 @@ select:focus,.campo:focus{border-color:var(--acc)}
     <div class="card conv">
       <div class="escena">
         <div class="orbe inactivo" id="orbe"><div class="anillo"></div><div class="nucleo" id="nucleo"></div></div>
+        <div class="vumetro" title="Nivel del micrófono"><i id="vuNivel"></i></div>
         <div class="escena-txt">
           <div class="estado" id="estado">Listo para conversar</div>
           <div class="estado-sub" id="estadoSub">Cargando datos de datos.gov.co…</div>
@@ -213,10 +221,12 @@ select:focus,.campo:focus{border-color:var(--acc)}
             <button class="btn" id="btnExportar" title="Descargar transcripción">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Transcripción
             </button>
+            <button class="btn" id="btnExportarJson" title="Descargar transcripción en JSON (hablante, inicio, fin, texto y confianza)">JSON</button>
             <label class="toggle"><input type="checkbox" id="interrupciones" checked>Permitir interrupciones</label>
             <label class="toggle" title="Con audífonos el micrófono no oye al agente: cualquier voz puede interrumpirlo"><input type="checkbox" id="audifonos">Uso audífonos</label>
           </div>
           <div class="aviso err" id="avisoVoz" style="display:none"></div>
+          <div class="aviso" id="avisoMic" style="display:none">Acércate al micrófono: tu voz llega muy baja.</div>
         </div>
       </div>
       <div class="metricas">
@@ -272,6 +282,7 @@ select:focus,.campo:focus{border-color:var(--acc)}
 </main>
 <div class="toast" id="toast"></div>
 
+<script src="/static/voz.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const EMOCIONES = {alegria:"Alegría",confianza:"Confianza",interes:"Interés",sorpresa:"Sorpresa",confusion:"Confusión",frustracion:"Frustración",enojo:"Enojo",tristeza:"Tristeza",miedo:"Miedo"};
@@ -304,6 +315,8 @@ const S = {
   tramos: [], ecoTexto: "", ecoHasta: 0, ecoSuave: 0, rellenos: null, nRelleno: 0, latencias: [],
   // Deepgram
   dgFallo: "", avisoDG: "", wsFallos: 0,
+  // calidad de la transcripción: vocabulario de la sesión, audio reciente (16 kHz) para refinar, nivel del micrófono
+  voc: null, audio: [], turnoDesde: null, vozDetectada: 0, nivelProm: 0, bajoDesde: 0,
 };
 
 /* ---------- utilidades ---------- */
@@ -431,6 +444,8 @@ async function cambiarFuente(peticion, mensaje) {
     S.esperaRespuesta = false;
     pintarFuente(d.estado);
     pintarBrief(d.brief);
+    S.voc = null; cargarVocabulario();
+    if (S.conversando && S.ws) conectarDeepgram();   // Deepgram vuelve a abrir con el vocabulario de la nueva fuente
     agregarLinea("sistema", d.estado.tipo === "api" ? "Fuente: API de datos.gov.co."
       : `Fuente: archivo ${d.estado.archivo}. Las respuestas salen de ese archivo.`, {sistema: true});
   } catch (e) { avisoDoc(e.message, "err"); }
@@ -463,20 +478,64 @@ function etiqueta(h) {
   return S.hablantes[h];
 }
 
+const HUMANO = h => !["agente", "texto", "sistema"].includes(String(h));
+
+/* op: tiempo (s desde el inicio), canal, palabras [{w, conf, original}], interim (línea en vivo), sistema,
+   sobre (elemento que esta línea reemplaza en su mismo lugar) */
 function agregarLinea(h, texto, op = {}) {
   $("vacioTrans")?.remove();
   const e = etiqueta(h);
   const div = document.createElement("div");
   div.className = "linea" + (op.interim ? " interim" : "");
   div.style.setProperty("--c", e.color);
-  const t = op.tiempo != null ? fmt(op.tiempo) : reloj();
-  div.innerHTML = `<div class="t mono">${t}</div><div class="burbuja"><div class="quien"><span>${e.nombre}</span>${op.canal ? `<span class="canal">${op.canal}</span>` : ""}<span class="senti-slot"></span></div><div class="texto"></div></div>`;
-  div.querySelector(".texto").textContent = texto;
-  $("trans").appendChild(div);
+  const inicio = op.tiempo != null ? op.tiempo : (S.inicio ? (performance.now() - S.inicio) / 1000 : 0), t = fmt(inicio);
+  div.innerHTML = `<div class="t mono">${t}</div><div class="burbuja"><div class="quien"><span class="nombre${HUMANO(h) ? " editable" : ""}" data-h="${esc(h)}"${HUMANO(h) ? ' title="Clic para renombrar"' : ""}>${esc(e.nombre)}</span>${op.canal ? `<span class="canal">${op.canal}</span>` : ""}<span class="senti-slot"></span></div><div class="texto"></div></div>`;
+  if (op.palabras) pintarPalabras(div.querySelector(".texto"), op.palabras);
+  else div.querySelector(".texto").textContent = texto;
+  if (op.sobre?.isConnected) op.sobre.replaceWith(div); else $("trans").appendChild(div);
   $("trans").scrollTop = $("trans").scrollHeight;
-  if (!op.interim && !op.sistema) { S.lineas.push({t, quien: e.nombre, el: div}); $("mInt").textContent = S.lineas.length; }
+  if (!op.interim && !op.sistema) {
+    const conf = op.palabras?.filter(p => p.conf != null);
+    div._reg = {t, h: String(h), quien: e.nombre, el: div, inicio, fin: op.fin ?? null, palabras: op.palabras || null,
+                confianza: conf?.length ? conf.reduce((a, p) => a + p.conf, 0) / conf.length : null, refinado: false};
+    S.lineas.push(div._reg); $("mInt").textContent = S.lineas.length;
+  }
   return div;
 }
+
+/* Palabras con confianza < 0,6: subrayado punteado; las corregidas por vocabulario muestran lo que se oyó. */
+function pintarPalabras(caja, palabras) {
+  caja.textContent = "";
+  palabras.forEach((p, i) => {
+    if (i) caja.append(" ");
+    const dudosa = p.conf != null && p.conf < 0.6;
+    if (!dudosa && !p.original) return caja.append(p.w);
+    const sp = document.createElement("span");
+    sp.textContent = p.w;
+    if (dudosa) sp.className = "dudosa";
+    sp.title = [dudosa ? `Confianza ${Math.round(p.conf * 100)} %` : "", p.original ? `Se oyó «${p.original}»` : ""].filter(Boolean).join(" · ");
+    caja.append(sp);
+  });
+}
+
+/* Clic en "Hablante 1" para renombrarlo ("Jurado Ana"); cambia en toda la transcripción y en los paneles. */
+function renombrar(h, nombre) {
+  const e = S.hablantes[h]; nombre = (nombre || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  document.querySelectorAll("#trans .nombre").forEach(n => { if (n.dataset.h === h) n.textContent = nombre || e.nombre; });
+  if (!e || !nombre || nombre === e.nombre) return;
+  const viejo = e.nombre; e.nombre = nombre;
+  S.lineas.forEach(l => { if (l.h === h) l.quien = nombre; });
+  S.analisis.forEach(a => { if (a.quien === viejo) a.quien = nombre; });
+  pintarPanel();
+}
+$("trans").addEventListener("click", ev => {
+  const n = ev.target.closest(".nombre.editable");
+  if (!n || n.isContentEditable) return;
+  n.contentEditable = "true"; n.focus(); document.getSelection().selectAllChildren(n);
+  const fin = guardar => { n.contentEditable = "false"; n.onblur = n.onkeydown = null; renombrar(n.dataset.h, guardar ? n.textContent : ""); };
+  n.onblur = () => fin(true);
+  n.onkeydown = k => { if (k.key === "Enter") { k.preventDefault(); fin(true); } else if (k.key === "Escape") fin(false); };
+});
 
 function quitarLinea(el) {
   if (!el) return;
@@ -484,9 +543,18 @@ function quitarLinea(el) {
   S.lineas = S.lineas.filter(l => l.el !== el); $("mInt").textContent = S.lineas.length;
 }
 
-function mostrarInterim(h, texto) {
-  if (!S.interim) S.interim = agregarLinea(h, texto, {interim: true});
-  else S.interim.querySelector(".texto").textContent = texto;
+/* Línea en vivo del turno: lo ya final (corregido) en negro y el parcial en gris, siempre en la misma línea. */
+function mostrarVivo(h) {
+  const finales = S.turno.filter(p => !p.mostrado);
+  if (!finales.length && !S.interimTxt) return;
+  if (!S.interim) S.interim = agregarLinea(h, "", {interim: true, canal: "escuchando…"});
+  const caja = S.interim.querySelector(".texto");
+  pintarPalabras(caja, finales);
+  if (S.interimTxt) {
+    const sp = document.createElement("span"); sp.className = "parcial";
+    sp.textContent = (finales.length ? " " : "") + S.interimTxt;
+    caja.append(sp);
+  }
   $("trans").scrollTop = $("trans").scrollHeight;
 }
 function quitarInterim() { S.interim?.remove(); S.interim = null; }
@@ -495,11 +563,12 @@ function quitarInterim() { S.interim?.remove(); S.interim = null; }
 async function iniciar() {
   if (S.conversando) return detener();
   try {
-    S.stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
+    S.stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
   } catch { toast("Permite el acceso al micrófono para conversar por voz."); return; }
   if (!("stt" in S.salud)) await cargarSalud();
-  S.conversando = true; S.pausa = false; S.turno = []; S.interimTxt = "";
+  S.conversando = true; S.pausa = false; S.turno = []; S.interimTxt = ""; S.turnoDesde = null;
   if (!S.inicio) S.inicio = performance.now();
+  cargarVocabulario();
   $("btnMic").classList.add("on"); $("btnMic").querySelector("span").textContent = "Terminar conversación";
   medirNivel();
   fetch("/api/calentar", {method: "POST"}).catch(() => {});
@@ -520,8 +589,8 @@ function detener() {
   cerrarDeepgram();
   pararNavegador();
   S.stream?.getTracks().forEach(t => t.stop()); S.stream = null;
-  S.nivel?.close?.(); S.nivel = null;
-  $("nucleo").style.transform = "";
+  S.nivel?.close?.(); S.nivel = null; S.audio = []; S.turnoDesde = null;
+  $("nucleo").style.transform = ""; $("vuNivel").style.height = "0"; $("avisoMic").style.display = "none";
   $("btnMic").classList.remove("on"); $("btnMic").querySelector("span").textContent = "Iniciar conversación";
   quitarInterim();
   estadoReposo();
@@ -530,7 +599,8 @@ function detener() {
 /* Deepgram con diarización (vía /ws/stt) */
 function conectarDeepgram() {
   cerrarDeepgram();
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/stt");
+  // con la sesión, el servidor arma el vocabulario (keyterm) de la fuente activa
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/stt?" + sesionQS());
   S.ws = ws;
   let abierto = 0;
   ws.onopen = () => {
@@ -539,7 +609,7 @@ function conectarDeepgram() {
     const tipo = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(t => MediaRecorder.isTypeSupported(t));
     S.rec = new MediaRecorder(S.stream, tipo ? {mimeType: tipo} : undefined);
     S.rec.ondataavailable = e => { if (e.data.size && ws.readyState === 1) ws.send(e.data); };
-    S.rec.start(250);
+    S.rec.start(100);   // trozos de 100 ms: Deepgram recibe el audio antes
     S.recInicio = performance.now(); S.offset = (S.recInicio - S.inicio) / 1000; S.finPalabra = 0;
     clearInterval(S.keep);
     S.keep = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({type: "KeepAlive"})); }, 8000);
@@ -577,16 +647,13 @@ function falloDeepgram(motivo) {
   if (S.conversando) iniciarNavegador();
 }
 
-function segmentos(palabras) {
-  const segs = [];
-  for (const w of palabras) {
-    const sp = w.speaker ?? 0, txt = w.punctuated_word || w.word;
-    const u = segs[segs.length - 1];
-    if (u && u.speaker === sp) u.texto += " " + txt;
-    else segs.push({speaker: sp, texto: txt, inicio: w.start});
-  }
-  return segs;
+async function cargarVocabulario() {
+  try {
+    const d = await (await fetch("/api/vocabulario?" + sesionQS())).json();
+    S.voc = Voz.vocabulario(d.terminos, d.extra);
+  } catch {}
 }
+
 function unir(ps) { return ps.map(w => w.punctuated_word || w.word).join(" ").trim(); }
 
 function manejarDG(m, ws) {
@@ -598,6 +665,7 @@ function manejarDG(m, ws) {
     if (S.turno.length && (m.last_word_end == null || m.last_word_end >= S.finPalabra - 0.05)) programarCierre(0, false);
     return;
   }
+  if (m.type === "SpeechStarted") { if (!agenteSuena()) S.vozDetectada = performance.now(); return; }
   if (m.type !== "Results") return;
   const alt = m.channel?.alternatives?.[0]; if (!alt) return;
   let ps = alt.words || [];
@@ -610,8 +678,10 @@ function manejarDG(m, ws) {
       ps = ps.filter(w => !propias.includes(w));
     }
   }
-  const segs = m.is_final ? segmentos(ps).map(s => ({quien: s.speaker, texto: s.texto, tiempo: S.offset + (s.inicio || 0)})) : null;
-  const tomado = recibirVoz(unir(ps), m.is_final, segs, ps[0]?.speaker ?? 0, "dg");
+  // palabras finales con su hablante, tiempo y confianza, corregidas con el vocabulario de la sesión
+  const pal = m.is_final ? Voz.procesar(ps.map(w => ({w: w.punctuated_word || w.word, conf: w.confidence ?? null,
+    start: S.offset + w.start, end: S.offset + w.end, quien: w.speaker ?? 0})), S.voc) : null;
+  const tomado = recibirVoz(unir(ps), m.is_final, pal, ps[0]?.speaker ?? 0, "dg", ps.length ? S.recInicio + ps[0].start * 1000 : null);
   if (tomado) S.finPalabra = Math.max(S.finPalabra, ...ps.map(w => w.end || 0));
   if (m.speech_final && S.turno.length) {
     // Fin de frase según Deepgram: adelanta el cierre, pero nunca antes de 600 ms desde la última palabra
@@ -633,7 +703,8 @@ function iniciarNavegador() {
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
       const texto = ev.results[i][0].transcript.trim();
       if (!ev.results[i].isFinal) { interim += " " + texto; continue; }
-      if (texto) recibirVoz(texto, true, [{quien: "nav", texto, tiempo: (performance.now() - S.inicio) / 1000}], "nav", "nav");
+      const t = (performance.now() - S.inicio) / 1000, conf = ev.results[i][0].confidence || null;
+      if (texto) recibirVoz(texto, true, Voz.procesar(texto.split(/\s+/).map(w => ({w, conf, start: t, end: t, quien: "nav"})), S.voc), "nav", "nav");
     }
     if (interim.trim()) recibirVoz(interim.trim(), false, null, "nav", "nav");
   };
@@ -668,7 +739,7 @@ function pideSilencio(t) {
 }
 
 /* Todo resultado de reconocimiento (Deepgram o navegador) pasa por aquí. Devuelve true si se tomó en cuenta. */
-function recibirVoz(texto, final, segs, quien, fuente) {
+function recibirVoz(texto, final, pal, quien, fuente, desde) {
   if (!S.conversando) return false;
   texto = (texto || "").trim();
   if (final) S.interimTxt = "";
@@ -684,17 +755,17 @@ function recibirVoz(texto, final, segs, quien, fuente) {
     interrumpir();
   } else if (S.pensando && !S.sonoRespuesta && (final || palabras(texto) >= 2)) retomarTurno();
   S.ultimaVoz = performance.now();
-  if (final) S.turno.push(...segs);
+  if (S.turnoDesde == null) S.turnoDesde = desde ?? S.ultimaVoz - 1200;   // inicio de su voz, para refinar el turno
+  if (final) S.turno.push(...pal);
   else { S.interimTxt = texto; S.interimQuien = quien; }
-  const visible = [...S.turno.filter(s => !s.mostrado).map(s => s.texto), S.interimTxt].join(" ").trim();
-  if (visible) mostrarInterim(quien, "(escuchando…) " + visible);
+  mostrarVivo(quien);
   programarFinTurno();
   return true;
 }
 
 /* Cierra el turno tras 900 ms sin resultados nuevos (400 ms si termina en «?»). Cada resultado reinicia la cuenta. */
 function programarFinTurno() {
-  const texto = [...S.turno.map(s => s.texto), S.interimTxt].join(" ").trim();
+  const texto = [...S.turno.map(p => p.w), S.interimTxt].join(" ").trim();
   if (texto) programarCierre(/\?\s*$/.test(texto) ? 400 : 900, true);
 }
 function programarCierre(ms, reiniciar) {
@@ -709,30 +780,31 @@ function cerrarTurno() {
   if (S.interimTxt) {
     // aún falta el resultado final de lo último que se dijo: se espera un poco antes de usar el parcial
     if (performance.now() - S.ultimaVoz < 1500) return programarCierre(300, true);
-    S.turno.push({quien: S.interimQuien, texto: S.interimTxt, tiempo: (S.ultimaVoz - S.inicio) / 1000});
+    const t = (S.ultimaVoz - S.inicio) / 1000;
+    S.turno.push(...S.interimTxt.split(/\s+/).map(w => ({w, conf: null, start: t, end: t, quien: S.interimQuien})));
     S.interimTxt = "";
   }
-  quitarInterim();
-  const segs = S.turno; S.turno = [];
-  if (!segs.length) return;
-  const texto = segs.map(s => s.texto).join(" ").replace(/\s+/g, " ").trim();
+  const vivo = S.interim; S.interim = null;
+  // se corrige de nuevo el turno completo (un nombre puede quedar partido entre dos resultados finales)
+  const todas = Voz.procesar(S.turno, S.voc); S.turno = [];
+  const desde = S.turnoDesde; S.turnoDesde = null;
+  if (!todas.length) return vivo?.remove();
+  const texto = todas.map(p => p.w).join(" ").replace(/\s+/g, " ").trim();
   const tipo = clasificarTurno(texto);
-  for (const g of agrupar(segs.filter(s => !s.mostrado))) {
-    const l = agregarLinea(g.quien, g.texto, {tiempo: g.tiempo, canal: "voz"});
+  // una línea por hablante (los cambios de 1-2 palabras no cuentan); la primera reemplaza a la línea en vivo
+  const registros = Voz.estabilizar(todas.filter(p => !p.mostrado)).map((g, i) => {
+    const l = agregarLinea(g.quien, g.texto, {tiempo: g.inicio, fin: g.fin, canal: "voz", palabras: g.palabras, sobre: i ? null : vivo});
     if (tipo !== "inutil") analizar(l, etiqueta(g.quien).nombre, g.texto);
-  }
+    return l._reg;
+  });
+  if (!registros.length) vivo?.remove();
+  if (registros.length && desde != null) refinar(registros, desde, performance.now());   // en segundo plano
   if (tipo === "silencio") return pausar();
   if (tipo !== "enviar") return;      // fragmento o charla en pausa: queda solo en la transcripción
   S.pausa = false; S.esperaRespuesta = false;
-  S.turnoEnviado = segs.map(s => ({...s, mostrado: true}));
+  S.turnoEnviado = todas.map(p => ({...p, mostrado: true}));
   S.lat = {t0: performance.now(), token: null, audio: null};
   responder(texto);
-}
-
-function agrupar(segs) {
-  const g = [];
-  for (const s of segs) { const u = g[g.length - 1]; if (u && u.quien === s.quien) u.texto += " " + s.texto; else g.push({...s}); }
-  return g;
 }
 
 function clasificarTurno(t) {
@@ -755,7 +827,7 @@ function retomarTurno() {
 
 function pausar() {
   interrumpir();
-  clearTimeout(S.tFin); S.tFin = null; S.turno = []; S.interimTxt = ""; S.turnoEnviado = null;
+  clearTimeout(S.tFin); S.tFin = null; S.turno = []; S.interimTxt = ""; S.turnoEnviado = null; S.turnoDesde = null;
   quitarInterim();
   entrarPausa();
 }
@@ -764,21 +836,81 @@ function entrarPausa() {
   estadoReposo();
 }
 
-/* nivel del micrófono para animar el orbe */
+/* Nivel del micrófono (orbe y medidor, aviso si la voz llega muy baja) y los últimos 40 s de audio a 16 kHz,
+   de donde sale el audio de cada turno para refinarlo. */
 function medirNivel() {
   try {
     const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(S.stream);
     const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an); S.nivel = ctx;
     const buf = new Uint8Array(an.fftSize);
+    const proc = ctx.createScriptProcessor(4096, 1, 1), paso16 = ctx.sampleRate / 16000;
+    proc.onaudioprocess = e => {
+      const x = e.inputBuffer.getChannelData(0), n = Math.floor(x.length / paso16), y = new Float32Array(n);
+      for (let i = 0; i < n; i++) {   // promedio por ventana: baja a 16 kHz sin aliasing grueso
+        const a = Math.floor(i * paso16), b = Math.max(a + 1, Math.floor((i + 1) * paso16));
+        let s = 0; for (let j = a; j < b; j++) s += x[j]; y[i] = s / (b - a);
+      }
+      const ahora = performance.now();
+      S.audio.push({fin: ahora, datos: y});
+      while (S.audio.length && S.audio[0].fin < ahora - 40000) S.audio.shift();
+    };
+    src.connect(proc); proc.connect(ctx.destination);   // sale en silencio: solo se usa para capturar
     const paso = () => {
       if (!S.nivel) return;
       an.getByteTimeDomainData(buf);
       let s = 0; for (const v of buf) s += ((v - 128) / 128) ** 2;
-      const rms = Math.sqrt(s / buf.length);
+      const rms = Math.sqrt(s / buf.length), ahora = performance.now();
       if (!S.hablando) $("nucleo").style.transform = `scale(${1 + Math.min(.35, rms * 3)})`;
+      $("vuNivel").style.height = Math.min(100, rms * 500) + "%";
+      // "Acércate al micrófono": nivel muy bajo durante 3 s mientras el usuario habla
+      S.nivelProm = 0.9 * S.nivelProm + 0.1 * rms;
+      const habla = !S.hablando && ahora - Math.max(S.ultimaVoz || 0, S.vozDetectada) < 1500;
+      if (habla && S.nivelProm < 0.02) { S.bajoDesde ||= ahora; if (ahora - S.bajoDesde > 3000) $("avisoMic").style.display = ""; }
+      else if (!habla || S.nivelProm > 0.03) { S.bajoDesde = 0; if (S.nivelProm > 0.03 || ahora - (S.ultimaVoz || 0) > 5000) $("avisoMic").style.display = "none"; }
       requestAnimationFrame(paso);
     };
     paso();
+  } catch {}
+}
+
+/* Audio del turno [desde, hasta] (ms de performance.now) -> WAV de 16 kHz mono */
+function extraerWav(desde, hasta) {
+  const trozos = S.audio.filter(c => c.fin > desde && c.fin - c.datos.length / 16 < hasta);
+  const total = trozos.reduce((a, c) => a + c.datos.length, 0);
+  if (total < 16000 * 0.4) return null;
+  const v = new DataView(new ArrayBuffer(44 + total * 2)), txt = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  txt(0, "RIFF"); v.setUint32(4, 36 + total * 2, true); txt(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); txt(36, "data"); v.setUint32(40, total * 2, true);
+  let o = 44;
+  for (const c of trozos) for (const x of c.datos) { v.setInt16(o, Math.max(-1, Math.min(1, x)) * 0x7fff, true); o += 2; }
+  return {blob: new Blob([v.buffer], {type: "audio/wav"}), inicio: trozos[0].fin - trozos[0].datos.length / 16};
+}
+
+/* Refinado del turno con Deepgram pregrabado (más preciso que el streaming). No bloquea al agente:
+   solo reemplaza el texto en pantalla, con la marca "refinado". */
+async function refinar(registros, desde, hasta) {
+  if (!S.salud.stt) return;
+  const wav = extraerWav(desde - 300, hasta + 200);
+  if (!wav) return;
+  const fd = new FormData(); fd.append("sesion", S.sesion); fd.append("audio", wav.blob, "turno.wav");
+  try {
+    const r = await fetch("/api/refinar", {method: "POST", body: fd});
+    if (!r.ok) return;
+    const d = await r.json(), base = (wav.inicio - S.inicio) / 1000;
+    const pal = Voz.procesar((d.palabras || []).map(p => ({w: p.w, conf: p.conf, start: base + p.start, end: base + p.end, quien: p.hablante})), S.voc);
+    // cada palabra refinada va a la línea en vivo que ya había empezado cuando se dijo
+    const grupos = registros.map(() => []);
+    for (const p of pal) { let k = 0; registros.forEach((g, i) => { if (g.inicio <= p.start + 0.3) k = i; }); grupos[k].push(p); }
+    registros.forEach((g, i) => {
+      const nuevas = grupos[i], antes = g.palabras?.length || 0;
+      if (!nuevas.length || !g.el.isConnected || nuevas.length < antes / 2) return;   // audio recortado: se deja el vivo
+      Object.assign(g, {palabras: nuevas, fin: nuevas[nuevas.length - 1].end, refinado: true,
+                        confianza: nuevas.reduce((a, p) => a + (p.conf ?? 1), 0) / nuevas.length});
+      pintarPalabras(g.el.querySelector(".texto"), nuevas);
+      const c = g.el.querySelector(".canal");
+      if (c) { c.textContent = "voz · refinado"; c.classList.add("refinado"); c.title = `Texto refinado con Deepgram ${d.modelo} (${d.idioma}) sobre el audio del turno`; }
+    });
   } catch {}
 }
 
@@ -1022,10 +1154,21 @@ function mostrarEscalamiento(t) {
 }
 
 /* ---------- exportar ---------- */
+function lineasExportables() {
+  const r = (v, n) => (v == null ? null : +v.toFixed(n));
+  return S.lineas.map(l => ({hablante: l.quien, inicio: r(l.inicio, 2), fin: r(l.fin, 2),
+    texto: l.el.querySelector(".texto").textContent, confianza: r(l.confianza, 3), refinado: l.refinado}));
+}
+function descargar(nombre, contenido, tipo) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([contenido], {type: tipo}));
+  a.download = nombre; a.click();
+}
 function exportar() {
-  const txt = S.lineas.map(l => `[${l.t}] ${l.quien}: ${l.el.querySelector(".texto").textContent}`).join("\n");
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], {type: "text/plain"}));
-  a.download = "transcripcion.txt"; a.click();
+  descargar("transcripcion.txt", lineasExportables().map(l => `[${fmt(l.inicio || 0)}] ${l.hablante}: ${l.texto}`).join("\n"), "text/plain");
+}
+function exportarJson() {
+  descargar("transcripcion.json", JSON.stringify({sesion: S.sesion, exportado: new Date().toISOString(),
+    lineas: lineasExportables()}, null, 2), "application/json");
 }
 
 /* ---------- eventos ---------- */
@@ -1036,6 +1179,7 @@ $("btnArchivo").onclick = () => $("archivo").click();
 $("archivo").onchange = e => subirArchivo(e.target.files[0]);
 $("btnApi").onclick = volverApi;
 $("btnExportar").onclick = exportar;
+$("btnExportarJson").onclick = exportarJson;
 $("interrupciones").onchange = $("audifonos").onchange = () => estadoReposo();
 $("formTexto").onsubmit = e => { e.preventDefault(); const t = $("texto").value; $("texto").value = ""; preguntarTexto(t); };
 etiqueta("agente");
