@@ -75,6 +75,17 @@ async def _crear(modelo, **kw):
     raise ultimo_error
 
 
+async def calentar():
+    """Abre la conexión con el proveedor al arrancar para que la primera pregunta no pague el handshake TLS."""
+    if not CLAVE:
+        return
+    for m in dict.fromkeys([MODELO, MODELO_RAPIDO]):
+        try:
+            await cliente.chat.completions.create(model=m, messages=[{"role": "user", "content": "ok"}], max_tokens=1)
+        except Exception as e:
+            print("Calentamiento del modelo", m, "falló:", str(e)[:120])
+
+
 async def json_rapido(messages, modelo=None):
     """Llamada corta que devuelve un dict (análisis de sentimiento, brief)."""
     r = await _crear(modelo or MODELO_RAPIDO, messages=messages, temperature=0,
