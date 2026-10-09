@@ -258,7 +258,9 @@ async def conectar_dg():
     from websockets.asyncio.client import connect
     modelos = [STT_MODELO, "nova-3" if STT_MODELO != "nova-3" else "nova-2"]
     for i, modelo in enumerate(modelos):
-        url = "wss://api.deepgram.com/v1/listen?" + "&".join(f"{k}={v}" for k, v in {"model": modelo, **PARAMS_STT}.items())
+        # nova-2 acepta "keywords" en español; refuerza la sigla del dataset, que suele salir como "y peces"
+        extra = {"keywords": "IPS:2"} if modelo == "nova-2" else {}
+        url = "wss://api.deepgram.com/v1/listen?" + "&".join(f"{k}={v}" for k, v in {"model": modelo, **PARAMS_STT, **extra}.items())
         try:
             return await connect(url, additional_headers={"Authorization": f"Token {DEEPGRAM}"}, max_size=None)
         except Exception as e:
