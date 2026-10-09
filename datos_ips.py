@@ -6,6 +6,7 @@ Contrato: cargar(), estado(), TOOLS, ejecutar(nombre, args), brief(), PROMPT_DAT
 import asyncio
 import difflib
 import os
+import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -25,7 +26,9 @@ SINONIMOS = {"uci adultos": ["intensiva adultos", "cuidado intensivo adulto"],
              "uci adulto": ["intensiva adultos", "cuidado intensivo adulto"],
              "uci pediatrica": ["intensiva pediatrica", "cuidado intensivo pediatrico"],
              "uci neonatal": ["intensiva neonatal", "cuidado intensivo neonatal"],
-             "intermedia adultos": ["intermedia adultos", "cuidado intermedio adulto"]}
+             "intermedia adultos": ["intermedia adultos", "cuidado intermedio adulto"],
+             "uci todas": ["intensiva adultos", "cuidado intensivo adulto", "intensiva pediatrica",
+                           "cuidado intensivo pediatrico", "intensiva neonatal", "cuidado intensivo neonatal"]}
 
 _D = {"df": None, "fuente": "sin datos", "actualizado": None, "brief": None}
 
@@ -137,9 +140,34 @@ def estado():
 
 # ---------------- resolución de valores ----------------
 
+def _sinonimo_uci(v):
+    """Interpreta las formas habladas de UCI/intermedia: 'camas de uci adulto', 'cuidados intensivos', 'uci'."""
+    v = re.sub(r"\b(camas?|de|del|la|las|unidad(es)?|para)\b", " ", v)
+    v = " ".join(v.split())
+    intensiva = any(w in v for w in ("uci", "intensiv"))
+    intermedia = any(w in v for w in ("ucin", "intermedi"))
+    if not (intensiva or intermedia):
+        return None
+    tipo = "intermedia" if intermedia and not "uci " in v + " " else "intensiva"
+    if "neonat" in v:
+        return f"uci neonatal" if tipo == "intensiva" else None
+    if "pediat" in v or "nin" in v:
+        return "uci pediatrica" if tipo == "intensiva" else None
+    if "adult" in v:
+        return "uci adultos" if tipo == "intensiva" else "intermedia adultos"
+    return "uci todas" if tipo == "intensiva" else None
+
+
 def _resolver(df, col, valor, umbral=0.8):
     v = norm(valor)
+    if col == "nom_descripcion_capacidad_n" and v not in SINONIMOS:
+        v = _sinonimo_uci(v) or v
     valores = df[col].unique().tolist()
+    if col == "nom_descripcion_capacidad_n" and v.startswith("uci"):
+        edad = {"uci adultos": "adult", "uci adulto": "adult", "uci pediatrica": "pediat", "uci neonatal": "neonat"}.get(v, "")
+        ok = [x for x in valores if "intensiv" in x and edad in x]
+        if ok:
+            return ok, None
     if v in valores:
         return [v], None
     if v in SINONIMOS:
@@ -167,6 +195,11 @@ def _filtrar(df, f, notas):
         aplicados["departamento"] = ", ".join(vals)
         if col == "depto_canonico":
             notas.append(f"Incluye los distritos {', '.join(DISTRITOS[d])}, que el dataset registra aparte.")
+    f = dict(f)
+    grupos = {"camas", "consultorios", "salas", "ambulancias", "camillas", "unidad movil", "sillas"}
+    if f.get("grupo_capacidad") and norm(f["grupo_capacidad"]) not in grupos and not f.get("descripcion_capacidad"):
+        f["descripcion_capacidad"] = f.pop("grupo_capacidad")
+        notas.append(f"'{f['descripcion_capacidad']}' es un tipo de capacidad, no un grupo: se filtró por descripción.")
     for campo, col in [("municipio", "municipio_n"), ("naturaleza", "naturaleza_n"),
                        ("grupo_capacidad", "nom_grupo_capacidad_n"), ("descripcion_capacidad", "nom_descripcion_capacidad_n")]:
         if f.get(campo):
@@ -270,7 +303,9 @@ def listar_valores(columna, contiene=None, limite=15, **_):
         return {"error": "columna_no_valida", "sugerencias": ["departamento", "municipio", "naturaleza", "grupo_capacidad", "descripcion_capacidad", "nivel_atencion"]}
     vals = df[col][df[col] != ""].value_counts()
     if contiene:
-        vals = vals[[norm(contiene) in norm(v) for v in vals.index]]
+        c = norm(contiene)
+        c = "intensiv" if c in ("uci", "ucis", "cuidados intensivos") else c
+        vals = vals[[c in norm(v) for v in vals.index]]
     return {"columna": columna, "valores": list(vals.index[:limite]), "total_distintos": int(len(vals)), "fecha_corte": fecha_corte()}
 
 
@@ -299,8 +334,8 @@ _FILTROS = {"type": "object", "properties": {
     "departamento": {"type": "string"}, "municipio": {"type": "string"},
     "naturaleza": {"type": "string", "description": "Pública, Privada o Mixta"},
     "nivel_atencion": {"type": ["string", "integer"], "description": "1, 2 o 3 (solo públicas)"},
-    "grupo_capacidad": {"type": "string", "description": "CAMAS, CONSULTORIOS, SALAS, AMBULANCIAS, CAMILLAS, UNIDAD MOVIL o SILLAS"},
-    "descripcion_capacidad": {"type": "string", "description": "Ej: Adultos, Pediátrica, uci adultos, Básica, Medicalizada"},
+    "grupo_capacidad": {"type": "string", "description": "Solo uno de: CAMAS, CONSULTORIOS, SALAS, AMBULANCIAS, CAMILLAS, UNIDAD MOVIL, SILLAS. La UCI va en descripcion_capacidad"},
+    "descripcion_capacidad": {"type": "string", "description": "Detalle dentro del grupo. Ej: uci adultos, uci neonatal, Adultos, Pediátrica, Básica, Medicalizada"},
     "incluir_distritos": {"type": ["boolean", "string"]}}}
 
 TOOLS = [

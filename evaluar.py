@@ -17,6 +17,8 @@ import agente
 import datos_ips
 from app import analizar_texto
 
+SOLO = [a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--casos=")]
+sys.argv = [a for a in sys.argv if not a.startswith("--casos=")]
 MODELOS = sys.argv[1:] or ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 HONESTO = re.compile(r"no (aparece|esta|está|tengo|contiene|registra|incluye|dispon|cuento|exist|hay (datos|informaci))|no se registra|solo se registra|sólo se registra|fuera de|no forma parte")
 EMPATIA = re.compile(r"entiendo|lamento|disculp|comprendo|siento")
@@ -52,7 +54,7 @@ async def un_caso(modelo, caso):
     esp = caso["esperado"]
     usadas = [p["herramienta"] for p in pasos]
     r = {"id": caso["id"], "tipo": caso["tipo"], "pregunta": caso["pregunta"], "respuesta": texto.strip(),
-         "herramientas": usadas, "estados": [p["estado"] for p in pasos],
+         "herramientas": usadas, "estados": [p["estado"] for p in pasos], "pasos": pasos,
          "latencia_primer_token": round(((primero or time.perf_counter()) - t0), 2),
          "modelo_real": fin.get("modelo", modelo)}
     if esp.get("cifra") == "no_disponible":
@@ -73,6 +75,8 @@ async def un_caso(modelo, caso):
 async def main():
     await datos_ips.cargar()
     casos = datos_ips.preguntas_evaluacion()
+    if SOLO:
+        casos = [c for c in casos if c["id"] in SOLO[0].split(",")]
     salida, tabla = {}, []
     for m in MODELOS:
         res = []
