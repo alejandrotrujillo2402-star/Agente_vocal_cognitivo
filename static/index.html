@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agente Vocal Cognitivo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f6f7; --panel:#ffffff; --line:#e1e7ea; --line2:#eef2f4; --txt:#0e1d22; --sub:#5d6e74; --mute:#8a999e;
+  --acc:#0f766e; --acc2:#14b8a6; --accbg:#e6f4f2;
+  --pos:#15803d; --neu:#64748b; --neg:#b91c1c;
+  --h1:#2563eb; --h2:#c2410c; --h3:#7c3aed; --h4:#be185d; --ag:#0f766e;
+  --r:14px; --sombra:0 1px 2px rgba(16,40,48,.04), 0 4px 16px rgba(16,40,48,.05);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:Manrope,system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit}
+svg{flex:none}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+
+/* encabezado */
+header{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.marca{display:flex;align-items:center;gap:12px}
+.logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;color:#fff}
+.marca h1{font-size:16px;margin:0;font-weight:800;letter-spacing:-.01em}
+.marca small{display:block;color:var(--sub);font-size:11.5px;font-weight:500}
+.estados{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--sub);font-weight:600;white-space:nowrap}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
+.chip.ok i{background:#16a34a}.chip.warn i{background:#d97706}.chip.err i{background:#dc2626}
+
+/* layout */
+main{display:grid;grid-template-columns:340px minmax(0,1fr) 360px;gap:16px;padding:16px;height:calc(100vh - 60px)}
+.col{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;padding-bottom:4px}
+.col::-webkit-scrollbar{width:6px}.col::-webkit-scrollbar-thumb{background:#d5dde0;border-radius:3px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sombra);padding:16px}
+.card h2{margin:0 0 12px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--sub);font-weight:700;display:flex;align-items:center;gap:8px;justify-content:space-between}
+.card h2 span{display:flex;align-items:center;gap:8px}
+
+/* documento */
+.drop{display:block;border:1.5px dashed #c5d2d6;border-radius:12px;padding:20px 14px;text-align:center;cursor:pointer;transition:.15s;background:#fafcfc}
+.drop:hover,.drop.sobre{border-color:var(--acc);background:var(--accbg)}
+.drop b{display:block;font-size:14px;margin:8px 0 2px}
+.drop small{color:var(--sub);font-size:12px}
+.sep{display:flex;align-items:center;gap:10px;color:var(--mute);font-size:11.5px;margin:14px 0 10px;font-weight:600}
+.sep:before,.sep:after{content:"";flex:1;height:1px;background:var(--line)}
+.fila{display:flex;gap:8px}
+select,.campo{flex:1;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--txt);outline:none}
+select:focus,.campo:focus{border-color:var(--acc)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--txt);font-weight:700;font-size:13px}
+.btn:hover{border-color:#c4d0d4}
+.btn.prim{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.prim:hover{background:#0d6660}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.full{width:100%;margin-top:8px}
+.aviso{font-size:12.5px;margin-top:10px;color:var(--sub);display:flex;gap:8px;align-items:flex-start}
+.aviso.err{color:var(--neg)}
+.spin{width:14px;height:14px;border:2px solid #cfe3e0;border-top-color:var(--acc);border-radius:50%;animation:g .8s linear infinite;flex:none;margin-top:1px}
+@keyframes g{to{transform:rotate(360deg)}}
+
+.doc-nombre{font-weight:800;font-size:15px;line-height:1.3;word-break:break-word}
+.doc-tipo{color:var(--acc);font-weight:700;font-size:12px;margin-top:3px;text-transform:capitalize}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.stat{background:var(--line2);border-radius:10px;padding:8px 10px}
+.stat b{display:block;font-size:16px;font-weight:800}
+.stat small{color:var(--sub);font-size:11px;font-weight:600}
+.resumen{line-height:1.55;color:#22343a;margin:0 0 10px}
+.temas{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.tema{font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:999px;background:var(--accbg);color:var(--acc)}
+.sug{display:flex;flex-direction:column;gap:7px}
+.sug button{text-align:left;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;line-height:1.4;display:flex;gap:9px;align-items:flex-start;color:var(--txt)}
+.sug button:hover{border-color:var(--acc);background:var(--accbg)}
+.sug button svg{color:var(--acc);margin-top:2px}
+.vacio{color:var(--mute);font-size:13px;line-height:1.5}
+
+/* conversación */
+.conv{display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden;flex:1}
+.escena{display:flex;align-items:center;gap:22px;padding:18px 20px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#fbfdfd,#fff)}
+.orbe{width:92px;height:92px;border-radius:50%;position:relative;flex:none;display:grid;place-items:center}
+.orbe .nucleo{width:64px;height:64px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#5eead4,var(--acc) 65%);box-shadow:0 8px 24px rgba(15,118,110,.35);transition:transform .08s linear}
+.orbe .anillo{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(20,184,166,.25)}
+.orbe.inactivo .nucleo{background:radial-gradient(circle at 35% 30%,#cbd5d8,#8fa1a6 70%);box-shadow:none}
+.orbe.pensando .anillo{border-color:transparent;border-top-color:var(--acc2);border-right-color:var(--acc2);animation:g 1s linear infinite}
+.orbe.hablando .anillo{animation:pulso 1.1s ease-out infinite}
+@keyframes pulso{0%{transform:scale(.85);opacity:1}100%{transform:scale(1.25);opacity:0}}
+.escena-txt{flex:1;min-width:0}
+.estado{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.estado-sub{color:var(--sub);margin-top:3px;font-size:13px}
+.controles{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
+.btn.mic{padding:10px 16px}
+.btn.mic.on{background:#b91c1c;border-color:#b91c1c;color:#fff}
+.toggle{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--sub);font-weight:600;cursor:pointer;user-select:none;margin-left:4px}
+.toggle input{accent-color:var(--acc)}
+.metricas{display:flex;gap:18px;padding:10px 20px;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub);font-weight:600;flex-wrap:wrap}
+.metricas b{color:var(--txt);font-weight:800}
+
+.trans{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;min-height:0}
+.linea{display:grid;grid-template-columns:52px 1fr;gap:10px;animation:entra .2s ease}
+@keyframes entra{from{opacity:0;transform:translateY(4px)}}
+.linea .t{font-size:11.5px;color:var(--mute);padding-top:3px}
+.burbuja{border-left:3px solid var(--c,var(--h1));padding:2px 0 2px 12px}
+.quien{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--c,var(--h1));margin-bottom:3px;flex-wrap:wrap}
+.quien .canal{color:var(--mute);font-weight:600;font-size:11px}
+.texto{line-height:1.55;font-size:14.5px;white-space:pre-wrap;word-break:break-word}
+.linea.interim .texto{color:var(--mute);font-style:italic}
+.linea.interrumpida .texto:after{content:"  [interrumpido]";color:var(--mute);font-size:12px}
+.senti{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
+.senti.positivo{background:#dcfce7;color:var(--pos)}.senti.neutral{background:#eef2f5;color:var(--neu)}.senti.negativo{background:#fee2e2;color:var(--neg)}
+.herr{margin-top:6px;font-size:11.5px;color:var(--sub);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.herr code{font-family:"JetBrains Mono",monospace;background:var(--line2);padding:2px 6px;border-radius:5px;font-size:11px;color:#22343a}
+.entrada{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--line)}
+.vacio-trans{margin:auto;text-align:center;color:var(--mute);max-width:360px;line-height:1.6}
+.vacio-trans svg{color:#c3cfd3;margin-bottom:8px}
+
+/* emociones */
+.clima{display:flex;align-items:baseline;justify-content:space-between}
+.clima b{font-size:22px;font-weight:800}
+.medidor{height:10px;border-radius:999px;background:linear-gradient(90deg,#fca5a5,#e2e8f0 50%,#86efac);position:relative;margin:12px 0 6px}
+.medidor i{position:absolute;top:-4px;width:4px;height:18px;border-radius:2px;background:var(--txt);transform:translateX(-50%);transition:left .4s ease;left:50%}
+.escala{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);font-weight:600}
+.barras{display:flex;flex-direction:column;gap:8px}
+.barra{display:grid;grid-template-columns:86px 1fr 34px;gap:8px;align-items:center;font-size:12.5px;font-weight:600}
+.barra .pista{height:8px;background:var(--line2);border-radius:999px;overflow:hidden}
+.barra .lleno{height:100%;border-radius:999px;transition:width .4s ease;width:0}
+.barra .v{text-align:right;color:var(--sub);font-size:11.5px}
+.origen{font-size:12px;color:var(--sub);margin:-4px 0 10px}
+.hablantes{display:flex;flex-direction:column;gap:8px}
+.hab{display:grid;grid-template-columns:10px 1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line2);border-radius:10px}
+.hab .p{width:10px;height:10px;border-radius:50%}
+.hab b{font-size:13px}.hab small{display:block;color:var(--sub);font-size:11.5px}
+#grafico{width:100%;height:130px;display:block}
+.leyenda{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--sub);margin-top:6px;font-weight:600}
+.leyenda span{display:flex;align-items:center;gap:5px}.leyenda i{width:8px;height:8px;border-radius:50%}
+.fuente{border-left:2px solid var(--line);padding:2px 0 2px 10px;font-size:12px;color:#3b4c52;line-height:1.45;margin-bottom:8px}
+.fuente b{color:var(--acc);font-size:11px}
+.paso{display:grid;grid-template-columns:22px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:12.5px}
+.paso:last-child{border-bottom:0}
+.paso .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;background:var(--neu)}
+.paso.ok .n{background:var(--pos)}.paso.error .n{background:var(--neg)}.paso.sospechoso .n{background:#d97706}.paso.decision .n{background:var(--acc)}
+.paso b{font-weight:800}.paso code{font-family:"JetBrains Mono",monospace;font-size:11px;color:#3b4c52;word-break:break-word}
+.paso small{display:block;color:var(--sub);margin-top:2px;line-height:1.4}
+.card.escalado{border-color:#fecaca;background:#fffafa}
+.esc-fila{font-size:13px;line-height:1.5;margin-bottom:6px}.esc-fila b{color:var(--sub);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;display:block}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--txt);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:.25s;pointer-events:none;z-index:9;max-width:90vw}
+.toast.ver{opacity:1}
+
+@media (max-width:1180px){
+  main{grid-template-columns:1fr;height:auto}
+  .col{overflow:visible}
+  .conv{min-height:70vh}
+  header{height:auto;padding:12px 16px;flex-wrap:wrap;gap:10px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="marca">
+    <div class="logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg></div>
+    <div><h1>Agente Vocal Cognitivo</h1><small>Conversa con los datos abiertos de salud de Colombia, en tiempo real</small></div>
+  </div>
+  <div class="estados">
+    <span class="chip" id="chipStt"><i></i>Voz</span>
+    <span class="chip" id="chipLlm"><i></i>Modelo</span>
+    <span class="chip" id="chipDoc"><i></i>Cargando datos</span>
+  </div>
+</header>
+
+<main>
+  <!-- Columna 1: documento -->
+  <section class="col">
+    <div class="card">
+      <h2><span>1 · Fuente de conocimiento</span><span class="chip" id="chipFuente" style="text-transform:none;letter-spacing:0"><i></i>cargando</span></h2>
+      <div class="doc-nombre">IPS públicas y privadas según nivel de atención y capacidad instalada</div>
+      <div class="doc-tipo" style="text-transform:none">API datos.gov.co · s2ru-bqt6</div>
+      <div class="stats" id="docStats"></div>
+      <div class="aviso" id="avisoDoc"><div class="spin"></div><span>Conectando con datos.gov.co…</span></div>
+    </div>
+
+    <div class="card" id="cardBrief">
+      <h2><span>2 · Brief</span><button class="btn" id="btnEscuchar" style="padding:5px 10px;font-size:12px" hidden>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>Escuchar</button></h2>
+      <div id="brief"><div class="vacio">Preparando el resumen del dataset y las preguntas sugeridas…</div></div>
+    </div>
+  </section>
+
+  <!-- Columna 2: conversación -->
+  <section class="col">
+    <div class="card conv">
+      <div class="escena">
+        <div class="orbe inactivo" id="orbe"><div class="anillo"></div><div class="nucleo" id="nucleo"></div></div>
+        <div class="escena-txt">
+          <div class="estado" id="estado">Listo para conversar</div>
+          <div class="estado-sub" id="estadoSub">Cargando datos de datos.gov.co…</div>
+          <div class="controles">
+            <button class="btn prim mic" id="btnMic">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+              <span>Iniciar conversación</span>
+            </button>
+            <button class="btn" id="btnCallar" title="Detener la voz del agente">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Callar
+            </button>
+            <button class="btn" id="btnExportar" title="Descargar transcripción">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Transcripción
+            </button>
+            <label class="toggle"><input type="checkbox" id="interrupciones" checked>Permitir interrupciones</label>
+          </div>
+        </div>
+      </div>
+      <div class="metricas">
+        <span>Latencia última respuesta: <b id="mLat">—</b></span>
+        <span>Promedio: <b id="mLatProm">—</b></span>
+        <span>Hablantes detectados: <b id="mHab">0</b></span>
+        <span>Intervenciones: <b id="mInt">0</b></span>
+      </div>
+      <div class="trans" id="trans">
+        <div class="vacio-trans" id="vacioTrans">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+          <div>La transcripción aparecerá aquí, separada por hablante y con marca de tiempo.</div>
+        </div>
+      </div>
+      <form class="entrada" id="formTexto">
+        <input class="campo" id="texto" placeholder="También puedes escribir tu pregunta" autocomplete="off">
+        <button class="btn prim" type="submit">Enviar</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Columna 3: sentimiento -->
+  <section class="col">
+    <div class="card escalado" id="cardEscala" hidden>
+      <h2><span>Caso escalado a un analista</span><span class="chip err" id="escId" style="text-transform:none;letter-spacing:0"></span></h2>
+      <div id="escDet"></div>
+    </div>
+    <div class="card">
+      <h2><span>Clima de la conversación</span></h2>
+      <div class="clima"><b id="climaTxt">Sin datos</b><span class="mono" id="climaVal" style="color:var(--sub);font-size:13px"></span></div>
+      <div class="medidor"><i id="climaMarca"></i></div>
+      <div class="escala"><span>Negativo</span><span>Neutral</span><span>Positivo</span></div>
+    </div>
+    <div class="card">
+      <h2><span>Emociones en vivo</span></h2>
+      <div class="origen" id="emoOrigen">Esperando la primera intervención.</div>
+      <div class="barras" id="barras"></div>
+    </div>
+    <div class="card">
+      <h2><span>Por hablante</span></h2>
+      <div class="hablantes" id="hablantes"><div class="vacio">Aún no hay intervenciones.</div></div>
+    </div>
+    <div class="card">
+      <h2><span>Evolución del sentimiento</span></h2>
+      <svg id="grafico" viewBox="0 0 320 130" preserveAspectRatio="none"></svg>
+      <div class="leyenda" id="leyenda"></div>
+    </div>
+    <div class="card">
+      <h2><span>Decisiones del agente</span></h2>
+      <div id="decisiones"><div class="vacio">Aquí verás qué modelo eligió, qué consultó, si se corrigió y por qué.</div></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const EMOCIONES = {alegria:"Alegría",confianza:"Confianza",interes:"Interés",sorpresa:"Sorpresa",confusion:"Confusión",frustracion:"Frustración",enojo:"Enojo",tristeza:"Tristeza",miedo:"Miedo"};
+const COLOR_EMO = {alegria:"#16a34a",confianza:"#0f766e",interes:"#2563eb",sorpresa:"#7c3aed",confusion:"#d97706",frustracion:"#ea580c",enojo:"#dc2626",tristeza:"#475569",miedo:"#9333ea"};
+const COLORES = ["var(--h1)","var(--h2)","var(--h3)","var(--h4)"];
+const HEX = {"var(--h1)":"#2563eb","var(--h2)":"#c2410c","var(--h3)":"#7c3aed","var(--h4)":"#be185d","var(--ag)":"#0f766e"};
+const DEPTOS = ["Amazonas","Antioquia","Arauca","Atlántico","Bogotá D.C","Bolívar","Boyacá","Caldas","Caquetá","Casanare","Cauca","Cesar","Chocó","Córdoba","Cundinamarca","Guainía","Guaviare","Huila","La Guajira","Magdalena","Meta","Nariño","Norte de Santander","Putumayo","Quindío","Risaralda","San Andrés","Santander","Sucre","Tolima","Valle del Cauca","Vaupés","Vichada"];
+
+const S = {
+  sesion: (() => { try { let s = sessionStorage.getItem("sid"); if (!s) { s = crypto.randomUUID(); sessionStorage.setItem("sid", s); } return s; } catch { return crypto.randomUUID(); } })(),
+  salud: {}, doc: null, conversando: false, ws: null, rec: null, stream: null, reco: null,
+  inicio: 0, offset: 0, turno: [], hablantes: {}, historial: [], analisis: [], lineas: [],
+  hablando: false, pensando: false, textoHablado: "", cola: [], actual: null, abort: null,
+  finVoz: 0, ecoTexto: "", ecoHasta: 0, latencias: [], interim: null, lineaAgente: null, keep: null, nivel: null,
+};
+
+/* ---------- utilidades ---------- */
+function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("ver"); clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove("ver"), 3500); }
+function chip(id, txt, clase) { const c = $(id); c.className = "chip " + (clase || ""); c.innerHTML = "<i></i>" + txt; }
+function reloj() { const s = S.inicio ? Math.max(0, (performance.now() - S.inicio) / 1000) : 0; return fmt(s); }
+function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+function norm(t) { return t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ñ ]/g, " ").split(/\s+/).filter(w => w.length > 2); }
+function esc(t) { return String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function estado(modo, sub) {
+  const o = $("orbe"); o.className = "orbe " + modo;
+  const t = {inactivo:"Listo para conversar", escuchando:"Escuchando", pensando:"Pensando", hablando:"Hablando"}[modo];
+  $("estado").textContent = t;
+  if (sub !== undefined) $("estadoSub").textContent = sub;
+  else $("estadoSub").textContent = {inactivo: S.doc ? "Pulsa Iniciar conversación y habla con naturalidad." : "Cargando datos de datos.gov.co…",
+    escuchando:"Haz tu pregunta en voz alta. Puedes interrumpir al agente cuando quieras.",
+    pensando:"Buscando en el documento…", hablando:"Respondiendo con base en el documento."}[modo];
+}
+function estadoReposo() { if (S.hablando || S.pensando) return; estado(S.conversando ? "escuchando" : "inactivo"); }
+
+/* ---------- salud ---------- */
+async function cargarSalud() {
+  try {
+    S.salud = await (await fetch("/health")).json();
+    chip("chipStt", S.salud.stt ? "Voz: Deepgram (diarización)" : "Voz: navegador", S.salud.stt ? "ok" : "warn");
+    chip("chipLlm", S.salud.llm ? "Modelo: " + S.salud.modelo.split("/").pop() : "Modelo sin clave", S.salud.llm ? "ok" : "err");
+  } catch { chip("chipLlm", "Servidor no disponible", "err"); }
+}
+
+/* ---------- fuente: API datos.gov.co ---------- */
+function avisoDoc(t, tipo) { $("avisoDoc").className = "aviso " + (tipo || ""); $("avisoDoc").innerHTML = (tipo === "carga" ? '<div class="spin"></div>' : "") + "<span>" + esc(t) + "</span>"; }
+const fmtN = n => Number(n || 0).toLocaleString("es-CO");
+
+async function cargarFuente(intento = 0) {
+  let e = {};
+  try { e = await (await fetch("/api/estado")).json(); } catch {}
+  if (!e.filas) {
+    avisoDoc(intento > 2 ? "Descargando las 41.000 filas de datos.gov.co (paginado)…" : "Conectando con datos.gov.co…", "carga");
+    return setTimeout(() => cargarFuente(intento + 1), 2000);
+  }
+  const vivo = String(e.fuente).startsWith("api");
+  chip("chipFuente", vivo ? "API en vivo" : "Caché verificada", vivo ? "ok" : "warn");
+  $("docStats").innerHTML = [[fmtN(e.prestadores), "prestadores"], [fmtN(e.sedes), "sedes"], [fmtN(e.municipios), "municipios"]]
+    .map(([v, n]) => `<div class="stat"><b>${v}</b><small>${n}</small></div>`).join("");
+  avisoDoc(`${fmtN(e.filas)} registros · ${e.fecha_corte || ""} · actualizado ${e.actualizado || ""}`);
+  if (!vivo) setTimeout(() => cargarFuente(intento + 1), 15000);
+  if (S.doc) return;
+  try {
+    const b = await (await fetch("/api/brief")).json();
+    S.doc = {brief: b};
+    $("brief").innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:6px">${esc(b.titulo)}</div>
+      <p class="resumen">${esc(b.resumen)}</p>
+      <div class="temas">${(b.temas || []).map(t => `<span class="tema">${esc(t)}</span>`).join("")}</div>
+      <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">PREGUNTAS SUGERIDAS</div>
+      <div class="sug">${(b.preguntas || []).map(p => `<button data-p="${esc(p)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>${esc(p)}</span></button>`).join("")}</div>`;
+    $("brief").querySelectorAll(".sug button").forEach(btn => btn.onclick = () => preguntarTexto(btn.dataset.p));
+    $("btnEscuchar").hidden = false;
+    chip("chipDoc", "Datos listos", "ok");
+    estadoReposo();
+  } catch {}
+}
+
+function presentar() {
+  S.presentado = true;
+  if (!S.doc) return;
+  const b = S.doc.brief;
+  const texto = b.presentacion_voz || b.resumen;
+  const l = agregarLinea("agente", texto, {canal: "brief"});
+  if (!S.inicio) S.inicio = performance.now();
+  hablar(texto, true);
+  analizar(l, "Agente", texto);
+}
+
+/* ---------- transcripción ---------- */
+function etiqueta(h) {
+  if (h === "agente") return {nombre: "Agente", color: "var(--ag)"};
+  if (h === "texto") return {nombre: "Usuario (escrito)", color: "#475569"};
+  if (!(h in S.hablantes)) { const n = Object.keys(S.hablantes).length; S.hablantes[h] = {nombre: "Hablante " + (n + 1), color: COLORES[n % 4]}; $("mHab").textContent = n + 1; }
+  return S.hablantes[h];
+}
+
+function agregarLinea(h, texto, op = {}) {
+  $("vacioTrans")?.remove();
+  const e = etiqueta(h);
+  const div = document.createElement("div");
+  div.className = "linea" + (op.interim ? " interim" : "");
+  div.style.setProperty("--c", e.color);
+  const t = op.tiempo != null ? fmt(op.tiempo) : reloj();
+  div.innerHTML = `<div class="t mono">${t}</div><div class="burbuja"><div class="quien"><span>${e.nombre}</span>${op.canal ? `<span class="canal">${op.canal}</span>` : ""}<span class="senti-slot"></span></div><div class="texto"></div></div>`;
+  div.querySelector(".texto").textContent = texto;
+  $("trans").appendChild(div);
+  $("trans").scrollTop = $("trans").scrollHeight;
+  if (!op.interim) { S.lineas.push({t, quien: e.nombre, el: div}); $("mInt").textContent = S.lineas.length; }
+  return div;
+}
+
+function mostrarInterim(h, texto) {
+  if (!S.interim) S.interim = agregarLinea(h, texto, {interim: true});
+  else S.interim.querySelector(".texto").textContent = texto;
+  $("trans").scrollTop = $("trans").scrollHeight;
+}
+function quitarInterim() { S.interim?.remove(); S.interim = null; }
+
+/* ---------- voz del usuario: Deepgram con diarización ---------- */
+async function iniciar() {
+  if (S.conversando) return detener();
+  try {
+    S.stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
+  } catch { toast("Permite el acceso al micrófono para conversar por voz."); return; }
+  S.conversando = true;
+  if (!S.inicio) S.inicio = performance.now();
+  $("btnMic").classList.add("on"); $("btnMic").querySelector("span").textContent = "Terminar conversación";
+  medirNivel();
+  if (S.doc && !S.presentado) { S.presentado = true; presentar(); }
+  if (S.salud.stt) conectarDeepgram(); else iniciarNavegador();
+  estadoReposo();
+  
+}
+
+function detener() {
+  S.conversando = false;
+  clearInterval(S.keep);
+  try { S.rec?.stop(); } catch {}
+  try { S.ws?.close(); } catch {}
+  try { S.reco?.stop(); } catch {}
+  S.stream?.getTracks().forEach(t => t.stop());
+  S.nivel?.close?.(); S.nivel = null;
+  $("nucleo").style.transform = "";
+  $("btnMic").classList.remove("on"); $("btnMic").querySelector("span").textContent = "Iniciar conversación";
+  quitarInterim();
+  estadoReposo();
+}
+
+function conectarDeepgram() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/stt");
+  S.ws = ws;
+  ws.onopen = () => {
+    S.offset = (performance.now() - S.inicio) / 1000;
+    const tipo = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(t => MediaRecorder.isTypeSupported(t));
+    S.rec = new MediaRecorder(S.stream, tipo ? {mimeType: tipo} : undefined);
+    S.rec.ondataavailable = e => { if (e.data.size && ws.readyState === 1) ws.send(e.data); };
+    S.rec.start(250);
+    clearInterval(S.keep);
+    S.keep = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({type: "KeepAlive"})); }, 8000);
+  };
+  ws.onmessage = e => { try { manejarDG(JSON.parse(e.data)); } catch {} };
+  ws.onclose = () => {
+    try { S.rec?.stop(); } catch {}
+    if (S.conversando && S.ws === ws) setTimeout(() => S.conversando && conectarDeepgram(), 800);
+  };
+}
+
+function segmentos(palabras) {
+  const segs = [];
+  for (const w of palabras) {
+    const sp = w.speaker ?? 0, txt = w.punctuated_word || w.word;
+    const u = segs[segs.length - 1];
+    if (u && u.speaker === sp) u.texto += " " + txt;
+    else segs.push({speaker: sp, texto: txt, inicio: w.start});
+  }
+  return segs;
+}
+
+function esEco(texto) {
+  if (!S.hablando && !S.pensando && performance.now() > (S.ecoHasta || 0)) return false;
+  const p = norm(texto); if (!p.length) return true;
+  const ref = new Set(norm(S.ecoTexto + " " + S.textoHablado + " " + (S.lineaAgente?.querySelector(".texto").textContent || "")));
+  return p.filter(w => ref.has(w)).length / p.length >= 0.6;
+}
+
+function manejarDG(m) {
+  if (m.type === "Error") { toast("Transcripción en la nube no disponible: uso el reconocimiento del navegador."); S.salud.stt = false; chip("chipStt", "Voz: navegador", "warn"); try { S.ws.close(); } catch {} iniciarNavegador(); return; }
+  if (m.type === "UtteranceEnd") { cerrarTurno(); return; }
+  if (m.type !== "Results") return;
+  const alt = m.channel?.alternatives?.[0]; if (!alt) return;
+  const texto = (alt.transcript || "").trim();
+  if (!texto) { if (m.speech_final) cerrarTurno(); return; }
+  if (esEco(texto)) return;
+  if (!m.is_final) {
+    mostrarInterim(alt.words?.[0]?.speaker ?? 0, texto);
+    if (S.hablando && $("interrupciones").checked && texto.split(/\s+/).length >= 2) interrumpir();
+    return;
+  }
+  quitarInterim();
+  if (S.hablando && $("interrupciones").checked) interrumpir();
+  for (const s of segmentos(alt.words || [])) {
+    const quien = etiqueta(s.speaker).nombre;
+    const l = agregarLinea(s.speaker, s.texto, {tiempo: S.offset + (s.inicio || 0), canal: "voz"});
+    S.turno.push(s.texto);
+    analizar(l, quien, s.texto);
+  }
+  if (m.speech_final) cerrarTurno();
+}
+
+function cerrarTurno() {
+  quitarInterim();
+  if (!S.turno.length) return;
+  const pregunta = S.turno.join(" "); S.turno = [];
+  S.finVoz = performance.now();
+  responder(pregunta);
+}
+
+/* respaldo: reconocimiento del navegador (sin diarización) */
+function iniciarNavegador() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast("Este navegador no reconoce voz. Usa Chrome o escribe tu pregunta."); return; }
+  const r = new SR(); S.reco = r;
+  r.lang = "es-CO"; r.continuous = true; r.interimResults = true;
+  r.onresult = ev => {
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const texto = ev.results[i][0].transcript.trim();
+      if (!texto || esEco(texto)) continue;
+      if (!ev.results[i].isFinal) { mostrarInterim("nav", texto); if (S.hablando && $("interrupciones").checked && texto.split(" ").length >= 2) interrumpir(); continue; }
+      quitarInterim();
+      const l = agregarLinea("nav", texto, {canal: "voz"});
+      analizar(l, etiqueta("nav").nombre, texto);
+      S.finVoz = performance.now();
+      responder(texto);
+    }
+  };
+  r.onend = () => { if (S.conversando && S.reco === r) try { r.start(); } catch {} };
+  try { r.start(); } catch {}
+}
+
+/* nivel del micrófono para animar el orbe */
+function medirNivel() {
+  try {
+    const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(S.stream);
+    const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an); S.nivel = ctx;
+    const buf = new Uint8Array(an.fftSize);
+    const paso = () => {
+      if (!S.nivel) return;
+      an.getByteTimeDomainData(buf);
+      let s = 0; for (const v of buf) s += ((v - 128) / 128) ** 2;
+      const rms = Math.sqrt(s / buf.length);
+      if (!S.hablando) $("nucleo").style.transform = `scale(${1 + Math.min(.35, rms * 3)})`;
+      requestAnimationFrame(paso);
+    };
+    paso();
+  } catch {}
+}
+
+/* ---------- respuesta del agente (streaming + voz por frases) ---------- */
+function preguntarTexto(t) {
+  t = (t || "").trim(); if (!t) return;
+  if (!S.inicio) S.inicio = performance.now();
+  const l = agregarLinea("texto", t, {canal: "escrito"});
+  analizar(l, etiqueta("texto").nombre, t);
+  S.finVoz = performance.now();
+  responder(t);
+}
+
+async function responder(pregunta) {
+  if (!S.doc) { toast("Los datos de datos.gov.co aún se están cargando."); return; }
+  interrumpir(true);
+  S.ecoTexto = "";
+  const ctrl = new AbortController(); S.abort = ctrl;
+  S.pensando = true; estado("pensando");
+  const linea = agregarLinea("agente", ""); S.lineaAgente = linea;
+  const caja = linea.querySelector(".texto");
+  let completo = "", buffer = "", primera = true;
+  const pasos = [];
+  try {
+    const r = await fetch("/api/preguntar", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({sesion: S.sesion, pregunta}), signal: ctrl.signal});
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "Error del servidor"); }
+    const lector = r.body.getReader(); const dec = new TextDecoder(); let resto = "";
+    while (true) {
+      const {done, value} = await lector.read(); if (done) break;
+      resto += dec.decode(value, {stream: true});
+      const partes = resto.split("\n"); resto = partes.pop();
+      for (const p of partes) {
+        if (!p.trim()) continue;
+        const ev = JSON.parse(p);
+        if (ev.t === "delta") {
+          completo += ev.x; buffer += ev.x; caja.textContent = completo;
+          $("trans").scrollTop = $("trans").scrollHeight;
+          // enviar a voz cada frase completa (la primera, apenas exista)
+          let m;
+          while ((m = buffer.match(/^([\s\S]*?[.!?;:])(\s+|$)/)) && (primera ? m[1].trim().length >= 8 : m[1].trim().length >= 30)) {
+            if (!m[2]) break;
+            hablar(m[1].trim()); buffer = buffer.slice(m[0].length); primera = false;
+          }
+        } else if (ev.t === "decision") { pasos.length = 0; pasos.push({tipo: "decision", ...ev.x}); pintarDecisiones(pasos, pregunta); }
+        else if (ev.t === "paso") {
+          pasos.push(ev.x); pintarDecisiones(pasos, pregunta);
+          const h = document.createElement("div"); h.className = "herr";
+          const etiquetaEstado = {ok: "consulta", error: "corrigiendo", sospechoso: "ajustando"}[ev.x.estado] || ev.x.estado;
+          h.innerHTML = `${etiquetaEstado}: <code>${esc(ev.x.herramienta)}</code> <code>${esc(JSON.stringify(ev.x.args)).slice(0, 120)}</code>`;
+          linea.querySelector(".burbuja").appendChild(h);
+        } else if (ev.t === "escalamiento") mostrarEscalamiento(ev.x);
+        else if (ev.t === "fin") { pasos.push({tipo: "fin", ...ev.x}); pintarDecisiones(pasos, pregunta); }
+        else if (ev.t === "error") console.warn(ev.x);
+      }
+    }
+    if (buffer.trim()) hablar(buffer.trim());
+    analizar(linea, "Agente", completo);
+  } catch (e) {
+    if (e.name !== "AbortError") { caja.textContent = "No pude responder: " + e.message; toast(e.message); }
+  } finally {
+    if (S.abort === ctrl) S.abort = null;
+    S.pensando = false;
+    if (!S.cola.length && !S.actual) estadoReposo();
+  }
+}
+
+/* cola de voz: cada frase se pide al TTS en paralelo y se reproduce en orden */
+function hablar(texto, esPresentacion) {
+  texto = texto.replace(/\s+/g, " ").trim(); if (!texto) return;
+  const item = {texto, audio: null};
+  if (S.salud.tts) { item.audio = new Audio("/api/tts?texto=" + encodeURIComponent(texto)); item.audio.preload = "auto"; }
+  S.cola.push(item);
+  if (!S.actual) siguiente();
+}
+
+function siguiente() {
+  const it = S.cola.shift();
+  S.actual = it || null;
+  if (!it) { if (S.hablando) S.ecoHasta = performance.now() + 2500; S.hablando = false; S.textoHablado = ""; $("nucleo").style.transform = ""; estadoReposo(); return; }
+  S.hablando = true; S.textoHablado = it.texto; S.ecoTexto = (S.ecoTexto + " " + it.texto).slice(-1500); estado("hablando");
+  const fin = () => { if (S.actual === it) siguiente(); };
+  const respaldo = () => { if (S.actual !== it) return; it.audio = null; hablarNavegador(it.texto, fin); };
+  if (it.audio) {
+    it.audio.onplaying = marcarLatencia;
+    it.audio.onended = fin;
+    it.audio.onerror = respaldo;
+    it.audio.play().catch(respaldo);
+  } else hablarNavegador(it.texto, fin);
+}
+
+function hablarNavegador(texto, fin) {
+  if (!window.speechSynthesis) return fin();
+  const u = new SpeechSynthesisUtterance(texto); u.lang = "es-CO"; u.rate = 1.05;
+  const voces = speechSynthesis.getVoices();
+  u.voice = voces.find(v => /es[-_](CO|MX|US|419)/i.test(v.lang) && /google|natural|online/i.test(v.name)) || voces.find(v => /^es/i.test(v.lang)) || null;
+  u.onstart = marcarLatencia; u.onend = fin; u.onerror = fin;
+  speechSynthesis.speak(u);
+}
+
+function marcarLatencia() {
+  if (!S.finVoz) return;
+  const ms = Math.round(performance.now() - S.finVoz); S.finVoz = 0;
+  S.latencias.push(ms);
+  $("mLat").textContent = (ms / 1000).toFixed(2) + " s";
+  $("mLatProm").textContent = (S.latencias.reduce((a, b) => a + b, 0) / S.latencias.length / 1000).toFixed(2) + " s";
+}
+
+function interrumpir(silencioso) {
+  const habia = S.hablando || S.pensando;
+  S.abort?.abort(); S.abort = null;
+  for (const it of [S.actual, ...S.cola]) if (it?.audio) { it.audio.onended = it.audio.onerror = null; it.audio.pause(); it.audio.removeAttribute("src"); it.audio.load(); }
+  S.cola = []; S.actual = null;
+  try { speechSynthesis.cancel(); } catch {}
+  if (habia && S.lineaAgente && !silencioso) S.lineaAgente.classList.add("interrumpida");
+  S.hablando = false; S.pensando = false; S.textoHablado = "";
+  estadoReposo();
+}
+
+/* ---------- sentimiento y emociones ---------- */
+async function analizar(linea, quien, texto) {
+  if (!texto || !texto.trim()) return;
+  try {
+    const r = await fetch("/api/analizar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texto, hablante: quien, sesion: S.sesion})});
+    const a = await r.json(); if (!r.ok) return;
+    const slot = linea.querySelector(".senti-slot");
+    slot.innerHTML = `<span class="senti ${a.sentimiento}">${a.sentimiento}${a.dominante !== "neutral" ? " · " + (EMOCIONES[a.dominante] || a.dominante).toLowerCase() : ""}</span>`;
+    S.analisis.push({quien, color: getComputedStyle(linea).getPropertyValue("--c").trim(), ...a});
+    pintarPanel();
+  } catch {}
+}
+
+function pintarPanel() {
+  const personas = S.analisis.filter(a => a.quien !== "Agente");
+  const base = personas.length ? personas : S.analisis;
+  const ult = base.slice(-6);
+  const prom = ult.reduce((s, a) => s + a.polaridad, 0) / (ult.length || 1);
+  $("climaMarca").style.left = ((prom + 1) / 2 * 100) + "%";
+  $("climaTxt").textContent = prom > .25 ? "Positivo" : prom < -.25 ? "Tenso" : "Neutral";
+  $("climaTxt").style.color = prom > .25 ? "var(--pos)" : prom < -.25 ? "var(--neg)" : "var(--txt)";
+  $("climaVal").textContent = (prom >= 0 ? "+" : "") + prom.toFixed(2);
+
+  const u = base[base.length - 1];
+  if (u) {
+    $("emoOrigen").textContent = `Última intervención de ${u.quien} · ${u.sentimiento}`;
+    $("barras").innerHTML = Object.entries(EMOCIONES).map(([k, n]) => {
+      const v = u.emociones[k] || 0;
+      return `<div class="barra"><span>${n}</span><div class="pista"><div class="lleno" style="width:${v * 100}%;background:${COLOR_EMO[k]}"></div></div><span class="v mono">${Math.round(v * 100)}</span></div>`;
+    }).join("");
+  }
+
+  const por = {};
+  for (const a of S.analisis) { const p = por[a.quien] ||= {n: 0, s: 0, color: a.color, dom: "neutral", sent: "neutral"}; p.n++; p.s += a.polaridad; p.dom = a.dominante; p.sent = a.sentimiento; }
+  $("hablantes").innerHTML = Object.entries(por).map(([q, p]) => `<div class="hab"><span class="p" style="background:${p.color}"></span><div><b>${esc(q)}</b><small>${p.n} intervenciones · emoción ${(EMOCIONES[p.dom] || "neutral").toLowerCase()}</small></div><span class="senti ${p.s / p.n > .25 ? "positivo" : p.s / p.n < -.25 ? "negativo" : "neutral"}">${(p.s / p.n >= 0 ? "+" : "") + (p.s / p.n).toFixed(2)}</span></div>`).join("");
+
+  // gráfico
+  const W = 320, H = 130, pad = 10, pts = S.analisis.slice(-30);
+  const x = i => pad + (pts.length < 2 ? (W - 2 * pad) / 2 : i * (W - 2 * pad) / (pts.length - 1));
+  const y = v => H / 2 - v * (H / 2 - pad);
+  let svg = `<line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="#e1e7ea" stroke-dasharray="3 4"/>`;
+  const quienes = [...new Set(pts.map(p => p.quien))];
+  for (const q of quienes) {
+    const serie = pts.map((p, i) => ({...p, i})).filter(p => p.quien === q);
+    const c = HEX[serie[0].color] || serie[0].color;
+    if (serie.length > 1) svg += `<polyline fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-opacity=".75" points="${serie.map(p => x(p.i) + "," + y(p.polaridad)).join(" ")}"/>`;
+    svg += serie.map(p => `<circle cx="${x(p.i)}" cy="${y(p.polaridad)}" r="3.5" fill="${q === "Agente" ? "#fff" : c}" stroke="${c}" stroke-width="2"/>`).join("");
+  }
+  $("grafico").innerHTML = svg;
+  $("leyenda").innerHTML = quienes.map(q => { const p = pts.find(a => a.quien === q); return `<span><i style="background:${HEX[p.color] || p.color}"></i>${esc(q)}</span>`; }).join("");
+}
+
+function pintarDecisiones(pasos, pregunta) {
+  const html = pasos.map((p, i) => {
+    if (p.tipo === "decision") {
+      const ruta = p.ruta === "social" ? "Charla social → modelo rápido, sin herramientas" : "Consulta de datos → modelo con herramientas";
+      return `<div class="paso decision"><span class="n">R</span><div><b>${ruta}</b><small>Modelo: ${esc(p.modelo)} · Emoción: ${esc(p.emocion)}${p.escalar ? " · <b style='color:var(--neg)'>Escalar: " + esc(p.escalar) + "</b>" : ""}${Object.keys(p.contexto || {}).length ? "<br>Contexto activo: " + esc(Object.entries(p.contexto).map(([k, v]) => k + "=" + v).join(", ")) : ""}</small></div></div>`;
+    }
+    if (p.tipo === "fin") return `<div class="paso"><span class="n">✓</span><div><b>Respuesta en ${(p.ms_total / 1000).toFixed(2)} s</b><small>Primer token ${(p.ms_primer_token / 1000).toFixed(2)} s · modelo real ${esc(p.modelo)} · ${p.consultas} consultas, ${p.exitos} válidas${p.fallos_seguidos ? " · turnos sin respuesta: " + p.fallos_seguidos : ""}</small></div></div>`;
+    const accion = {ok: "Resultado válido", error: "Valor no encontrado → se corrige", sospechoso: "Resultado sospechoso → ajusta filtro"}[p.estado] || p.estado;
+    return `<div class="paso ${p.estado}"><span class="n">${i}</span><div><b>${esc(p.herramienta)}</b> · ${accion}<small><code>${esc(JSON.stringify(p.args))}</code><br>${esc(p.resultado)}</small></div></div>`;
+  }).join("");
+  $("decisiones").innerHTML = `<div style="font-size:12px;color:var(--sub);margin-bottom:6px">“${esc(pregunta.slice(0, 80))}”</div>` + html;
+}
+
+function mostrarEscalamiento(t) {
+  $("cardEscala").hidden = false;
+  $("escId").innerHTML = "<i></i>" + esc(t.id);
+  const motivo = {frustracion: "Frustración sostenida", sin_respuesta: "Dos intentos sin respuesta", solicitud_usuario: "Lo pidió el usuario"}[t.motivo] || t.motivo;
+  $("escDet").innerHTML = [["Motivo", motivo], ["Necesita", t.resumen], ["Pendiente", t.pendiente], ["Emoción", t.emocion], ["Contexto", Object.entries(t.contexto || {}).map(([k, v]) => k + "=" + v).join(", ") || "—"]]
+    .map(([k, v]) => `<div class="esc-fila"><b>${k}</b>${esc(v)}</div>`).join("");
+  toast("Caso " + t.id + " escalado a un analista con todo el contexto.");
+}
+
+/* ---------- exportar ---------- */
+function exportar() {
+  const txt = S.lineas.map(l => `[${l.t}] ${l.quien}: ${l.el.querySelector(".texto").textContent}`).join("\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], {type: "text/plain"}));
+  a.download = "transcripcion.txt"; a.click();
+}
+
+/* ---------- eventos ---------- */
+$("btnMic").onclick = iniciar;
+$("btnCallar").onclick = () => interrumpir();
+$("btnEscuchar").onclick = presentar;
+$("btnExportar").onclick = exportar;
+$("formTexto").onsubmit = e => { e.preventDefault(); const t = $("texto").value; $("texto").value = ""; preguntarTexto(t); };
+etiqueta("agente");
+pintarPanel();
+cargarSalud();
+cargarFuente();
+if (window.speechSynthesis) speechSynthesis.getVoices();
+</script>
+</body>
+</html>
